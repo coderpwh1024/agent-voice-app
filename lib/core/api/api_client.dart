@@ -1,0 +1,136 @@
+import 'dart:convert';
+import 'dart:io';
+
+import '../config/app_config.dart';
+import 'api_models.dart';
+
+class ApiException implements Exception {
+  const ApiException(this.statusCode, this.message);
+
+  final int statusCode;
+  final String message;
+
+  @override
+  String toString() => statusCode == 0 ? message : 'HTTP $statusCode: $message';
+}
+
+class AgentApiClient {
+  AgentApiClient(this.config, {HttpClient? httpClient})
+    : _httpClient = httpClient ?? HttpClient() {
+    _httpClient.connectionTimeout = const Duration(seconds: 10);
+  }
+
+  final AppConfig config;
+  final HttpClient _httpClient;
+
+  Uri uri(String path, [Map<String, String>? query]) {
+    final base = Uri.parse(config.baseUrl.trim());
+    final normalizedPath =
+        '${base.path.replaceAll(RegExp(r'/$'), '')}/'
+        '${path.replaceFirst(RegExp(r'^/'), '')}';
+    return base.replace(path: normalizedPath, queryParameters: query);
+  }
+
+  Future<VoiceCapabilities> capabilities() async {
+    return VoiceCapabilities.fromJson(
+      await _request('GET', '/voice/capabilities'),
+    );
+  }
+
+  Future<VoiceSession> createVoiceSession({
+    required String agentId,
+    required String voice,
+    String? threadId,
+  }) async {
+    final body = <String, Object?>{
+      'agent_id': agentId,
+      'voice': voice,
+      'language': 'zh',
+      'turn_detection': 'server_vad',
+    };
+    if (threadId != null) {
+      body['thread_id'] = threadId;
+    }
+    return VoiceSession.fromJson(
+      await _request('POST', '/voice/sessions', body: body),
+    );
+  }
+
+  Future<void> closeVoiceSession(String sessionId) async {
+    await _request('DELETE', '/voice/sessions/$sessionId');
+  }
+
+  Future<List<ThreadSummary>> threads(String agentId) async {
+    if (config.userId.trim().isEmpty) {
+      throw const ApiException(0, '查看历史需要在设置中填写 user_id');
+    }
+    final json = await _request(
+      'GET',
+      '/$agentId/threads',
+      query: <String, String>{'user_id': config.userId.trim(), 'limit': '50'},
+    );
+    return (json['threads'] as List<dynamic>? ?? const [])
+        .map((item) => ThreadSummary.fromJson(item as Map<String, dynamic>))
+        .toList(growable: false);
+  }
+
+  Future<List<ChatItem>> history(String agentId, String threadId) async {
+    final json = await _request(
+      'POST',
+      '/$agentId/history',
+      body: <String, Object?>{'thread_id': threadId},
+    );
+    return (json['messages'] as List<dynamic>? ?? const [])
+        .map((item) => ChatItem.fromJson(item as Map<String, dynamic>))
+        .toList(growable: false);
+  }
+
+  Uri websocketUri(String sessionId) {
+    final httpUri = uri('/voice/sessions/$sessionId/ws');
+    return httpUri.replace(scheme: httpUri.scheme == 'https' ? 'wss' : 'ws');
+  }
+
+  Map<String, dynamic> websocketHeaders() => <String, dynamic>{
+    HttpHeaders.authorizationHeader: 'Bearer ${config.accessToken.trim()}',
+  };
+
+  Future<Map<String, dynamic>> _request(
+    String method,
+    String path, {
+    Map<String, String>? query,
+    Map<String, Object?>? body,
+  }) async {
+    try {
+      final request = await _httpClient.openUrl(method, uri(path, query));
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer ${config.accessToken.trim()}',
+      );
+      request.headers.contentType = ContentType.json;
+      if (body != null) {
+        request.write(jsonEncode(body));
+      }
+      final response = await request.close();
+      final text = await utf8.decoder.bind(response).join();
+      final decoded = text.isEmpty ? <String, dynamic>{} : jsonDecode(text);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        final detail = decoded is Map<String, dynamic>
+            ? decoded['detail']?.toString() ?? text
+            : text;
+        throw ApiException(response.statusCode, detail);
+      }
+      if (decoded is! Map<String, dynamic>) {
+        throw const FormatException('Expected a JSON object');
+      }
+      return decoded;
+    } on ApiException {
+      rethrow;
+    } on SocketException catch (error) {
+      throw ApiException(0, '无法连接后端：${error.message}');
+    } on HandshakeException catch (error) {
+      throw ApiException(0, 'TLS 握手失败：${error.message}');
+    }
+  }
+
+  void close() => _httpClient.close(force: true);
+}
