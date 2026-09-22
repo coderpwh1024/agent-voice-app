@@ -73,11 +73,14 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   }
 
   String? get _selectedVoice {
-    final voices = widget.controller.capabilities?.voices ?? const <String>[];
+    final capabilities = widget.controller.capabilities;
+    final voices = capabilities?.voices ?? const <String>[];
     if (voices.isEmpty) {
       return null;
     }
-    return voices.contains(_voice) ? _voice : voices.first;
+    return voices.contains(_voice)
+        ? _voice
+        : capabilities?.defaultVoice ?? voices.first;
   }
 
   Future<void> _connect() async {
@@ -317,6 +320,7 @@ class _ConnectionPanel extends StatelessWidget {
       VoiceConnectionState.thinking => '正在思考',
       VoiceConnectionState.speaking => '正在回答',
     };
+    final selectedVoiceOption = capabilities?.voiceOption(selectedVoice);
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 4, 12, 0),
       child: Padding(
@@ -383,11 +387,14 @@ class _ConnectionPanel extends StatelessWidget {
                       labelText: '音色',
                       isDense: true,
                     ),
-                    items: capabilities?.voices
+                    items: capabilities?.voiceOptions
                         .map(
-                          (voice) => DropdownMenuItem(
-                            value: voice,
-                            child: Text(voice),
+                          (voice) => DropdownMenuItem<String>(
+                            value: voice.id,
+                            child: Text(
+                              voice.displayName,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         )
                         .toList(),
@@ -396,6 +403,23 @@ class _ConnectionPanel extends StatelessWidget {
                 ),
               ],
             ),
+            if (selectedVoiceOption != null) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  connected
+                      ? '当前音色：${selectedVoiceOption.displayName}；结束会话后可更换'
+                      : selectedVoiceOption.description.isEmpty
+                      ? '选择音色后，点击“开始语音”即可试听'
+                      : selectedVoiceOption.description,
+                  textAlign: TextAlign.right,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             Row(
               children: [

@@ -84,32 +84,92 @@ class AgentCapability {
   final bool cancelExecution;
 }
 
+class VoiceOption {
+  const VoiceOption({
+    required this.id,
+    required this.name,
+    this.description = '',
+  });
+
+  factory VoiceOption.fromJson(Map<String, dynamic> json) {
+    final id = json['id']?.toString().trim() ?? '';
+    final name = json['name']?.toString().trim() ?? '';
+    return VoiceOption(
+      id: id,
+      name: name.isEmpty ? id : name,
+      description: json['description']?.toString().trim() ?? '',
+    );
+  }
+
+  factory VoiceOption.legacy(String id) => VoiceOption(id: id, name: id);
+
+  final String id;
+  final String name;
+  final String description;
+
+  String get displayName => name == id ? id : '$name · $id';
+}
+
 class VoiceCapabilities {
   const VoiceCapabilities({
     required this.enabled,
     required this.protocolVersion,
-    required this.voices,
+    required this.voiceOptions,
+    required this.defaultVoice,
     required this.agents,
   });
 
-  factory VoiceCapabilities.fromJson(Map<String, dynamic> json) =>
-      VoiceCapabilities(
-        enabled: json['enabled'] as bool? ?? false,
-        protocolVersion: json['protocol_version'] as int? ?? 0,
-        voices: (json['voices'] as List<dynamic>? ?? const [])
-            .map((item) => item.toString())
-            .toList(growable: false),
-        agents: (json['agents'] as List<dynamic>? ?? const [])
-            .map(
-              (item) => AgentCapability.fromJson(item as Map<String, dynamic>),
-            )
-            .toList(growable: false),
-      );
+  factory VoiceCapabilities.fromJson(Map<String, dynamic> json) {
+    final legacyVoiceIds = (json['voices'] as List<dynamic>? ?? const [])
+        .map((item) => item.toString().trim())
+        .where((id) => id.isNotEmpty)
+        .toList(growable: false);
+    final metadataById = <String, VoiceOption>{};
+    for (final item in json['voice_options'] as List<dynamic>? ?? const []) {
+      if (item is! Map) {
+        continue;
+      }
+      final option = VoiceOption.fromJson(Map<String, dynamic>.from(item));
+      if (option.id.isNotEmpty) {
+        metadataById.putIfAbsent(option.id, () => option);
+      }
+    }
+    final voiceIds = legacyVoiceIds.isNotEmpty
+        ? legacyVoiceIds
+        : metadataById.keys.toList(growable: false);
+    final seenVoiceIds = <String>{};
+    final voiceOptions = voiceIds
+        .where(seenVoiceIds.add)
+        .map((id) => metadataById[id] ?? VoiceOption.legacy(id))
+        .toList(growable: false);
+    final configuredDefault = json['default_voice']?.toString().trim();
+    final defaultVoice =
+        voiceOptions.any((option) => option.id == configuredDefault)
+        ? configuredDefault
+        : voiceOptions.firstOrNull?.id;
+
+    return VoiceCapabilities(
+      enabled: json['enabled'] as bool? ?? false,
+      protocolVersion: json['protocol_version'] as int? ?? 0,
+      voiceOptions: voiceOptions,
+      defaultVoice: defaultVoice,
+      agents: (json['agents'] as List<dynamic>? ?? const [])
+          .map((item) => AgentCapability.fromJson(item as Map<String, dynamic>))
+          .toList(growable: false),
+    );
+  }
 
   final bool enabled;
   final int protocolVersion;
-  final List<String> voices;
+  final List<VoiceOption> voiceOptions;
+  final String? defaultVoice;
   final List<AgentCapability> agents;
+
+  List<String> get voices =>
+      voiceOptions.map((option) => option.id).toList(growable: false);
+
+  VoiceOption? voiceOption(String? id) =>
+      voiceOptions.where((option) => option.id == id).firstOrNull;
 }
 
 class VoiceSession {
