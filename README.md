@@ -4,7 +4,7 @@
 
 ## 当前能力
 
-- 读取 `/voice/capabilities`，选择 Agent 与音色
+- 读取 `/voice/capabilities`，选择 Agent 与服务端配置的音色，并展示音色名称与描述
 - 邮箱验证码登录与自动注册，接入 `/auth/email/code`、`/auth/email/verify`
 - 登录态安全保存：iOS Keychain、Android Keystore AES-GCM
 - 获取与编辑个人资料，接入 `/users/me`，支持昵称和头像上传
@@ -36,6 +36,8 @@
 
 App 启动后输入邮箱即可登录。新邮箱首次验证成功时由后端自动注册，已有邮箱则直接登录；两种流程都会返回用户绑定的短期 App Token。App 不会保存 `AUTH_SECRET` 或 `APP_TOKEN_SECRET`。
 
+音色列表由后端 `voice_options` 下发，App 不内置供应商音色。新版接口会显示中文名称、音色 ID 和描述；旧版接口只有 `voices` 字符串数组时仍可正常选择。音色在创建语音会话时生效，当前协议不支持会话中热切换，需要先结束会话再选择其他音色重新开始。
+
 兼容的可信后台仍可签发开发 Token：
 
 ```http
@@ -64,10 +66,23 @@ flutter run \
   --dart-define=API_BASE_URL=http://10.0.2.2:8000
 ```
 
+USB 真机调试使用项目脚本。它会构建带 `http://127.0.0.1:8000` 地址的 Debug APK、覆盖安装、重新建立 `adb reverse` 并启动 App：
+
+```bash
+./scripts/install_usb_debug.sh
+```
+
+连接多个设备时，将目标设备序列号作为第一个参数。后端使用其他端口时可传入 `BACKEND_PORT`：
+
+```bash
+BACKEND_PORT=8080 ./scripts/install_usb_debug.sh 20b2a515
+```
+
 地址说明：
 
 - Android 模拟器访问宿主机使用 `http://10.0.2.2:8000`
-- 真机使用电脑的局域网地址，后端需监听可达网卡
+- USB 真机使用安装脚本映射到 `http://127.0.0.1:8000`；USB 重连后需重新执行脚本或 `adb reverse tcp:8000 tcp:8000`
+- 非 USB 真机使用电脑的局域网地址，后端需监听可达网卡
 - iOS 模拟器可用 `http://127.0.0.1:8000`
 - 生产环境必须使用 HTTPS/WSS
 
