@@ -28,6 +28,8 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>用于与 Agent 进行实时语音对话、插话和本地回声消除。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>用于从相册中选择个人头像。</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>用于连接同一局域网内的 Agent Service 开发服务器。</string>
 	<key>NSAppTransportSecurity</key>

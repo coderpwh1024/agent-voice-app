@@ -74,4 +74,14 @@ class AuthSessionStore {
     json['base_url'] = baseUrl;
     await _channel.invokeMethod<void>('write', jsonEncode(json));
   }
+
+  Future<void> updateUser(AuthUser user) async {
+    final value = await _channel.invokeMethod<String>('read');
+    if (value == null || value.isEmpty) {
+      return;
+    }
+    final json = jsonDecode(value) as Map<String, dynamic>;
+    json['user'] = user.toJson();
+    await _channel.invokeMethod<void>('write', jsonEncode(json));
+  }
 }

@@ -7,6 +7,7 @@
 - 读取 `/voice/capabilities`，选择 Agent 与音色
 - 邮箱验证码登录与自动注册，接入 `/auth/email/code`、`/auth/email/verify`
 - 登录态安全保存：iOS Keychain、Android Keystore AES-GCM
+- 获取与编辑个人资料，接入 `/users/me`，支持昵称和头像上传
 - 创建、关闭语音会话，并用 Bearer Token 建立 WebSocket
 - 按后端契约编码/解码 45 字节 `VCE1` PCM 帧头
 - 上行 16 kHz PCM16 mono；下行 24 kHz PCM16 mono

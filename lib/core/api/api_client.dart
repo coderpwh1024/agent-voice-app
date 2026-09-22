@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import '../config/app_config.dart';
 import 'api_models.dart';
@@ -63,6 +64,73 @@ class AgentApiClient {
     return VoiceCapabilities.fromJson(
       await _request('GET', '/voice/capabilities'),
     );
+  }
+
+  Future<AuthUser> currentUser() async {
+    return AuthUser.fromJson(await _request('GET', '/users/me'));
+  }
+
+  Future<AuthUser> updateCurrentUser({
+    String? nickname,
+    Uint8List? imageBytes,
+    String? imageName,
+    String? imageContentType,
+  }) async {
+    if (nickname == null && imageBytes == null) {
+      throw const ApiException(0, '昵称或头像至少需要修改一项');
+    }
+
+    final boundary =
+        '----AgentVoice${DateTime.now().microsecondsSinceEpoch.toRadixString(16)}';
+    final multipart = BytesBuilder(copy: false);
+
+    void addText(String value) => multipart.add(utf8.encode(value));
+
+    if (nickname != null) {
+      addText('--$boundary\r\n');
+      addText('Content-Disposition: form-data; name="nickname"\r\n\r\n');
+      addText('$nickname\r\n');
+    }
+    if (imageBytes != null) {
+      final safeName = (imageName ?? 'avatar.jpg').replaceAll(
+        RegExp(r'[\r\n"]'),
+        '_',
+      );
+      addText('--$boundary\r\n');
+      addText(
+        'Content-Disposition: form-data; name="image"; '
+        'filename="$safeName"\r\n',
+      );
+      addText(
+        'Content-Type: ${imageContentType ?? 'application/octet-stream'}\r\n\r\n',
+      );
+      multipart.add(imageBytes);
+      addText('\r\n');
+    }
+    addText('--$boundary--\r\n');
+    final payload = multipart.takeBytes();
+
+    try {
+      final request = await _httpClient.openUrl('PATCH', uri('/users/me'));
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer ${config.accessToken.trim()}',
+      );
+      request.headers.contentType = ContentType(
+        'multipart',
+        'form-data',
+        parameters: <String, String>{'boundary': boundary},
+      );
+      request.contentLength = payload.length;
+      request.add(payload);
+      return AuthUser.fromJson(await _decodeResponse(await request.close()));
+    } on ApiException {
+      rethrow;
+    } on SocketException catch (error) {
+      throw ApiException(0, '无法连接后端：${error.message}');
+    } on HandshakeException catch (error) {
+      throw ApiException(0, 'TLS 握手失败：${error.message}');
+    }
   }
 
   Future<VoiceSession> createVoiceSession({
@@ -141,34 +209,7 @@ class AgentApiClient {
       if (body != null) {
         request.write(jsonEncode(body));
       }
-      final response = await request.close();
-      final text = await utf8.decoder.bind(response).join();
-      final decoded = text.isEmpty ? <String, dynamic>{} : jsonDecode(text);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        final detail = _errorMessage(decoded, text);
-        throw ApiException(response.statusCode, detail);
-      }
-      if (decoded is! Map<String, dynamic>) {
-        throw const FormatException('Expected a JSON object');
-      }
-      if (decoded.containsKey('code') && decoded.containsKey('data')) {
-        final code = decoded['code'];
-        if (code != 200) {
-          throw ApiException(
-            response.statusCode,
-            decoded['message']?.toString() ?? '请求失败',
-          );
-        }
-        final data = decoded['data'];
-        if (data == null) {
-          return <String, dynamic>{};
-        }
-        if (data is! Map<String, dynamic>) {
-          throw const FormatException('Expected response data to be an object');
-        }
-        return data;
-      }
-      return decoded;
+      return await _decodeResponse(await request.close());
     } on ApiException {
       rethrow;
     } on SocketException catch (error) {
@@ -176,6 +217,38 @@ class AgentApiClient {
     } on HandshakeException catch (error) {
       throw ApiException(0, 'TLS 握手失败：${error.message}');
     }
+  }
+
+  Future<Map<String, dynamic>> _decodeResponse(
+    HttpClientResponse response,
+  ) async {
+    final text = await utf8.decoder.bind(response).join();
+    final decoded = text.isEmpty ? <String, dynamic>{} : jsonDecode(text);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final detail = _errorMessage(decoded, text);
+      throw ApiException(response.statusCode, detail);
+    }
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Expected a JSON object');
+    }
+    if (decoded.containsKey('code') && decoded.containsKey('data')) {
+      final code = decoded['code'];
+      if (code != 200) {
+        throw ApiException(
+          response.statusCode,
+          decoded['message']?.toString() ?? '请求失败',
+        );
+      }
+      final data = decoded['data'];
+      if (data == null) {
+        return <String, dynamic>{};
+      }
+      if (data is! Map<String, dynamic>) {
+        throw const FormatException('Expected response data to be an object');
+      }
+      return data;
+    }
+    return decoded;
   }
 
   String _errorMessage(Object? decoded, String fallback) {

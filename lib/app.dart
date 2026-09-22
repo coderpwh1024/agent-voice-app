@@ -6,6 +6,7 @@ import 'core/api/api_models.dart';
 import 'core/auth/auth_session_store.dart';
 import 'core/config/app_config.dart';
 import 'features/auth/auth_page.dart';
+import 'features/profile/profile_page.dart';
 import 'features/settings/settings_sheet.dart';
 import 'features/voice_session/voice_home_page.dart';
 import 'features/voice_session/voice_session_controller.dart';
@@ -64,6 +65,35 @@ class _AgentVoiceAppState extends State<AgentVoiceApp> {
       } catch (_) {
         // The controller exposes the actionable error in the page.
       }
+    }
+  }
+
+  Future<void> _showProfile(BuildContext context) async {
+    final user = _currentUser;
+    if (user == null) {
+      return;
+    }
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => ProfilePage(
+          config: _controller.config,
+          initialUser: user,
+          onUserChanged: _userChanged,
+          onOpenSettings: _showSettings,
+          onLogout: _logout,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _userChanged(AuthUser user) async {
+    if (mounted) {
+      setState(() => _currentUser = user);
+    }
+    try {
+      await _sessionStore.updateUser(user);
+    } catch (_) {
+      // The live profile remains available if secure persistence is unavailable.
     }
   }
 
@@ -183,6 +213,26 @@ class _AgentVoiceAppState extends State<AgentVoiceApp> {
             ),
           ),
         ),
+        appBarTheme: const AppBarTheme(
+          centerTitle: false,
+          backgroundColor: Color(0xfff8f8fc),
+          surfaceTintColor: Colors.transparent,
+          titleTextStyle: TextStyle(
+            color: Color(0xff17151a),
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.4,
+          ),
+          iconTheme: IconThemeData(color: Color(0xff17151a)),
+        ),
+        cardTheme: CardThemeData(
+          elevation: 0,
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+            side: const BorderSide(color: Color(0xffece9ef)),
+          ),
+        ),
       ),
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -204,6 +254,8 @@ class _AgentVoiceAppState extends State<AgentVoiceApp> {
             )
           : VoiceHomePage(
               controller: _controller,
+              user: _currentUser!,
+              onOpenProfile: _showProfile,
               onOpenSettings: _showSettings,
             ),
     );

@@ -56,5 +56,23 @@ void main() {
     expect(find.text('未连接'), findsOneWidget);
     expect(find.text('开始语音'), findsOneWidget);
     expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byTooltip('个人主页'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('个人主页'), findsOneWidget);
+    expect(find.text('编辑个人资料'), findsOneWidget);
+    expect(find.text('tester@example.com'), findsWidgets);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.text('编辑个人资料'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('保存更改'), findsOneWidget);
+    expect(find.text('公开资料'), findsOneWidget);
+    expect(find.text('更换头像'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:agent_voice_app/core/api/api_client.dart';
 import 'package:agent_voice_app/core/config/app_config.dart';
@@ -127,6 +128,79 @@ void main() {
       requests.single.headers.value(HttpHeaders.authorizationHeader),
       'Bearer access-token',
     );
+    api.close();
+  });
+
+  test('gets and updates the authenticated user profile', () async {
+    String? multipartBody;
+    server.listen((request) async {
+      requests.add(request);
+      if (request.method == 'PATCH') {
+        final bytes = await request.fold<BytesBuilder>(
+          BytesBuilder(),
+          (builder, chunk) => builder..add(chunk),
+        );
+        multipartBody = utf8.decode(bytes.takeBytes(), allowMalformed: true);
+      }
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(
+        jsonEncode(<String, Object?>{
+          'code': 200,
+          'message': 'success',
+          'data': <String, Object?>{
+            'id': 42,
+            'nickname': request.method == 'PATCH' ? 'New name' : 'Old name',
+            'email': 'user@example.com',
+            'image_url': request.method == 'PATCH'
+                ? 'https://cdn.example.com/avatar.png'
+                : null,
+          },
+        }),
+      );
+      await request.response.close();
+    });
+
+    final api = client();
+    final before = await api.currentUser();
+    final updated = await api.updateCurrentUser(
+      nickname: 'New name',
+      imageBytes: Uint8List.fromList(<int>[
+        0x89,
+        0x50,
+        0x4e,
+        0x47,
+        0x0d,
+        0x0a,
+        0x1a,
+        0x0a,
+        1,
+        2,
+        3,
+      ]),
+      imageName: 'avatar.png',
+      imageContentType: 'image/png',
+    );
+
+    expect(before.nickname, 'Old name');
+    expect(updated.nickname, 'New name');
+    expect(updated.imageUrl, 'https://cdn.example.com/avatar.png');
+    expect(requests, hasLength(2));
+    expect(requests.first.uri.path, '/users/me');
+    expect(requests.first.method, 'GET');
+    expect(requests.last.method, 'PATCH');
+    expect(
+      requests.every(
+        (request) =>
+            request.headers.value(HttpHeaders.authorizationHeader) ==
+            'Bearer access-token',
+      ),
+      isTrue,
+    );
+    expect(requests.last.headers.contentType?.mimeType, 'multipart/form-data');
+    expect(multipartBody, contains('name="nickname"'));
+    expect(multipartBody, contains('New name'));
+    expect(multipartBody, contains('filename="avatar.png"'));
+    expect(multipartBody, contains('Content-Type: image/png'));
     api.close();
   });
 

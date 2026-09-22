@@ -2,16 +2,21 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_models.dart';
 import '../conversations/history_sheet.dart';
+import '../profile/profile_avatar.dart';
 import 'voice_session_controller.dart';
 
 class VoiceHomePage extends StatefulWidget {
   const VoiceHomePage({
     super.key,
     required this.controller,
+    required this.user,
+    required this.onOpenProfile,
     required this.onOpenSettings,
   });
 
   final VoiceSessionController controller;
+  final AuthUser user;
+  final Future<void> Function(BuildContext context) onOpenProfile;
   final Future<void> Function(BuildContext context) onOpenSettings;
 
   @override
@@ -164,10 +169,16 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
             icon: const Icon(Icons.history),
           ),
           IconButton(
-            tooltip: '连接设置',
-            onPressed: connected ? null : () => widget.onOpenSettings(context),
-            icon: const Icon(Icons.settings_outlined),
+            tooltip: '个人主页',
+            onPressed: connected ? null : () => widget.onOpenProfile(context),
+            icon: ProfileAvatar(
+              nickname: widget.user.nickname,
+              imageUrl: widget.user.imageUrl,
+              size: 34,
+              ring: false,
+            ),
           ),
+          const SizedBox(width: 8),
         ],
       ),
       body: SafeArea(
