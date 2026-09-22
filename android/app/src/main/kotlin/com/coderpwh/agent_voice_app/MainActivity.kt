@@ -3,6 +3,7 @@ package com.coderpwh.agent_voice_app
 import android.Manifest
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
@@ -10,8 +11,12 @@ import android.media.AudioTrack
 import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.util.Base64
 import androidx.annotation.NonNull
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -20,22 +25,50 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.security.KeyStore
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.AtomicBoolean
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
 import kotlin.concurrent.thread
 import kotlin.math.max
 
 class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler {
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val audio = VoiceAudioEngine(mainHandler)
+    private val audio by lazy {
+        VoiceAudioEngine(
+            mainHandler,
+            getSystemService(AUDIO_SERVICE) as AudioManager,
+        )
+    }
     private var pendingPermission: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
         MethodChannel(messenger, "agent_voice/audio").setMethodCallHandler(this)
+        MethodChannel(messenger, "agent_voice/secure_session").setMethodCallHandler { call, result ->
+            try {
+                when (call.method) {
+                    "read" -> result.success(readSecureSession())
+                    "write" -> {
+                        writeSecureSession(requireNotNull(call.arguments as? String))
+                        result.success(null)
+                    }
+                    "delete" -> {
+                        securePreferences().edit().remove(SECURE_SESSION_VALUE).apply()
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            } catch (error: Exception) {
+                result.error("secure_session", error.message, null)
+            }
+        }
         EventChannel(messenger, "agent_voice/microphone").setStreamHandler(
             object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
@@ -58,6 +91,61 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler {
                 }
             },
         )
+    }
+
+    private fun securePreferences() =
+        getSharedPreferences(SECURE_SESSION_PREFERENCES, MODE_PRIVATE)
+
+    private fun sessionKey(): SecretKey {
+        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (keyStore.getKey(SECURE_SESSION_KEY_ALIAS, null) as? SecretKey)?.let { return it }
+        val generator = KeyGenerator.getInstance(
+            KeyProperties.KEY_ALGORITHM_AES,
+            "AndroidKeyStore",
+        )
+        generator.init(
+            KeyGenParameterSpec.Builder(
+                SECURE_SESSION_KEY_ALIAS,
+                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+            )
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .build(),
+        )
+        return generator.generateKey()
+    }
+
+    private fun writeSecureSession(value: String) {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, sessionKey())
+        val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
+        val payload = ByteArray(cipher.iv.size + encrypted.size)
+        cipher.iv.copyInto(payload)
+        encrypted.copyInto(payload, cipher.iv.size)
+        securePreferences().edit()
+            .putString(SECURE_SESSION_VALUE, Base64.encodeToString(payload, Base64.NO_WRAP))
+            .apply()
+    }
+
+    private fun readSecureSession(): String? {
+        val encoded = securePreferences().getString(SECURE_SESSION_VALUE, null) ?: return null
+        return try {
+            val payload = Base64.decode(encoded, Base64.NO_WRAP)
+            if (payload.size <= GCM_IV_BYTES) return null
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(
+                Cipher.DECRYPT_MODE,
+                sessionKey(),
+                GCMParameterSpec(GCM_TAG_BITS, payload.copyOfRange(0, GCM_IV_BYTES)),
+            )
+            String(
+                cipher.doFinal(payload.copyOfRange(GCM_IV_BYTES, payload.size)),
+                Charsets.UTF_8,
+            )
+        } catch (_: Exception) {
+            securePreferences().edit().remove(SECURE_SESSION_VALUE).apply()
+            null
+        }
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
@@ -157,10 +245,18 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler {
 
     companion object {
         private const val MICROPHONE_PERMISSION_REQUEST = 9021
+        private const val SECURE_SESSION_PREFERENCES = "agent_voice_secure_session"
+        private const val SECURE_SESSION_VALUE = "encrypted_value"
+        private const val SECURE_SESSION_KEY_ALIAS = "agent_voice_session_key"
+        private const val GCM_IV_BYTES = 12
+        private const val GCM_TAG_BITS = 128
     }
 }
 
-private class VoiceAudioEngine(private val mainHandler: Handler) {
+private class VoiceAudioEngine(
+    private val mainHandler: Handler,
+    private val audioManager: AudioManager,
+) {
     @Volatile
     var microphoneSink: EventChannel.EventSink? = null
 
@@ -181,16 +277,112 @@ private class VoiceAudioEngine(private val mainHandler: Handler) {
     private var playbackThread: Thread? = null
     private var monitorThread: Thread? = null
     private var writtenFrames = 0L
+    private var audioRouteConfigured = false
+    private var previousAudioMode: Int? = null
+    private var previousSpeakerphoneOn: Boolean? = null
+    private var previousCommunicationDevice: AudioDeviceInfo? = null
+    private var previousVoiceCallVolume: Int? = null
+    private var appliedVoiceCallVolume: Int? = null
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
-        invalidResponses.clear()
-        commands.clear()
-        markers.clear()
-        writtenFrames = 0
-        startPlayback()
-        startCapture()
-        startMonitor()
+        try {
+            invalidResponses.clear()
+            commands.clear()
+            markers.clear()
+            writtenFrames = 0
+            configureAudioRoute()
+            startPlayback()
+            startCapture()
+            startMonitor()
+        } catch (error: Exception) {
+            stop()
+            throw error
+        }
+    }
+
+    private fun configureAudioRoute() {
+        previousAudioMode = audioManager.mode
+        audioRouteConfigured = true
+        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            previousCommunicationDevice = audioManager.communicationDevice
+            val currentDevice = audioManager.communicationDevice
+            val shouldUseSpeaker = currentDevice == null ||
+                currentDevice.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE ||
+                currentDevice.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+            if (shouldUseSpeaker) {
+                val speaker = audioManager.availableCommunicationDevices.firstOrNull {
+                    it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                } ?: throw IllegalStateException("Built-in speaker is unavailable")
+                if (!audioManager.setCommunicationDevice(speaker)) {
+                    throw IllegalStateException("Unable to route voice playback to speaker")
+                }
+                ensureAudibleSpeakerVolume()
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            previousSpeakerphoneOn = audioManager.isSpeakerphoneOn
+            @Suppress("DEPRECATION")
+            audioManager.isSpeakerphoneOn = true
+            ensureAudibleSpeakerVolume()
+        }
+    }
+
+    private fun ensureAudibleSpeakerVolume() {
+        val current = audioManager.getStreamVolume(AudioManager.STREAM_VOICE_CALL)
+        val maximum = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
+        val minimumAudible = (maximum * 7 + 9) / 10
+        if (current < minimumAudible) {
+            previousVoiceCallVolume = current
+            appliedVoiceCallVolume = minimumAudible
+            audioManager.setStreamVolume(
+                AudioManager.STREAM_VOICE_CALL,
+                minimumAudible,
+                0,
+            )
+        }
+    }
+
+    private fun restoreAudioRoute() {
+        if (!audioRouteConfigured) return
+        try {
+            val appliedVolume = appliedVoiceCallVolume
+            val previousVolume = previousVoiceCallVolume
+            if (
+                appliedVolume != null &&
+                previousVolume != null &&
+                audioManager.getStreamVolume(AudioManager.STREAM_VOICE_CALL) == appliedVolume
+            ) {
+                audioManager.setStreamVolume(
+                    AudioManager.STREAM_VOICE_CALL,
+                    previousVolume,
+                    0,
+                )
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val previousDevice = previousCommunicationDevice
+                val isStillAvailable = previousDevice != null &&
+                    audioManager.availableCommunicationDevices.any { it.id == previousDevice.id }
+                if (isStillAvailable) {
+                    audioManager.setCommunicationDevice(previousDevice!!)
+                } else {
+                    audioManager.clearCommunicationDevice()
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.isSpeakerphoneOn = previousSpeakerphoneOn ?: false
+            }
+        } finally {
+            audioManager.mode = previousAudioMode ?: AudioManager.MODE_NORMAL
+            previousAudioMode = null
+            previousSpeakerphoneOn = null
+            previousCommunicationDevice = null
+            previousVoiceCallVolume = null
+            appliedVoiceCallVolume = null
+            audioRouteConfigured = false
+        }
     }
 
     private fun startCapture() {
@@ -421,6 +613,7 @@ private class VoiceAudioEngine(private val mainHandler: Handler) {
         markers.clear()
         invalidResponses.clear()
         writtenFrames = 0
+        restoreAudioRoute()
     }
 
     companion object {
