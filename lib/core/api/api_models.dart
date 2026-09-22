@@ -1,3 +1,67 @@
+class EmailCodeAccepted {
+  const EmailCodeAccepted({required this.expiresInSeconds});
+
+  factory EmailCodeAccepted.fromJson(Map<String, dynamic> json) =>
+      EmailCodeAccepted(
+        expiresInSeconds: json['expires_in_seconds'] as int? ?? 180,
+      );
+
+  final int expiresInSeconds;
+}
+
+class AuthUser {
+  const AuthUser({
+    required this.id,
+    required this.nickname,
+    required this.email,
+    this.imageUrl,
+  });
+
+  factory AuthUser.fromJson(Map<String, dynamic> json) => AuthUser(
+    id: (json['id'] as num).toInt(),
+    nickname: json['nickname'] as String? ?? '',
+    email: json['email'] as String? ?? '',
+    imageUrl: json['image_url'] as String?,
+  );
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': id,
+    'nickname': nickname,
+    'email': email,
+    'image_url': imageUrl,
+  };
+
+  final int id;
+  final String nickname;
+  final String email;
+  final String? imageUrl;
+}
+
+class EmailAuthResult {
+  const EmailAuthResult({
+    required this.accessToken,
+    required this.tokenType,
+    required this.expiresAt,
+    required this.isNewUser,
+    required this.user,
+  });
+
+  factory EmailAuthResult.fromJson(Map<String, dynamic> json) =>
+      EmailAuthResult(
+        accessToken: json['access_token'] as String,
+        tokenType: json['token_type'] as String? ?? 'bearer',
+        expiresAt: json['expires_at'] as int,
+        isNewUser: json['is_new_user'] as bool? ?? false,
+        user: AuthUser.fromJson(json['user'] as Map<String, dynamic>),
+      );
+
+  final String accessToken;
+  final String tokenType;
+  final int expiresAt;
+  final bool isNewUser;
+  final AuthUser user;
+}
+
 class AgentCapability {
   const AgentCapability({
     required this.id,

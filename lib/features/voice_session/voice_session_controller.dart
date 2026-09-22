@@ -102,6 +102,7 @@ class VoiceSessionController extends ChangeNotifier {
       _ensureConfigured();
       final value = await _api.capabilities();
       if (!value.enabled) {
+        _capabilities = value;
         throw const ApiException(503, '后端实时语音功能未启用');
       }
       if (value.protocolVersion != voiceProtocolVersion) {

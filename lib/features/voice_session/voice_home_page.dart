@@ -179,13 +179,17 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
               selectedAgent: agent,
               selectedVoice: voice,
               connected: connected,
+              configured: controller.config.isComplete,
               threadId: _threadId,
               onAgentChanged: (value) => setState(() {
                 _agentId = value;
                 _threadId = null;
               }),
               onVoiceChanged: (value) => setState(() => _voice = value),
-              onConnect: controller.config.isComplete ? _connect : null,
+              onConnect:
+                  controller.config.isComplete && capabilities?.enabled == true
+                  ? _connect
+                  : null,
               onDisconnect: controller.disconnect,
               onConfigure: () => widget.onOpenSettings(context),
               onReload: _reloadCapabilities,
@@ -258,6 +262,7 @@ class _ConnectionPanel extends StatelessWidget {
     required this.selectedAgent,
     required this.selectedVoice,
     required this.connected,
+    required this.configured,
     required this.threadId,
     required this.onAgentChanged,
     required this.onVoiceChanged,
@@ -272,6 +277,7 @@ class _ConnectionPanel extends StatelessWidget {
   final AgentCapability? selectedAgent;
   final String? selectedVoice;
   final bool connected;
+  final bool configured;
   final String? threadId;
   final ValueChanged<String?> onAgentChanged;
   final ValueChanged<String?> onVoiceChanged;
@@ -337,6 +343,7 @@ class _ConnectionPanel extends StatelessWidget {
               children: [
                 Expanded(
                   child: DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: selectedAgent?.id,
                     decoration: const InputDecoration(
                       labelText: 'Agent',
@@ -359,6 +366,7 @@ class _ConnectionPanel extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: selectedVoice,
                     decoration: const InputDecoration(
                       labelText: '音色',
@@ -380,14 +388,14 @@ class _ConnectionPanel extends StatelessWidget {
             const SizedBox(height: 12),
             Row(
               children: [
-                if (capabilities == null)
+                if (capabilities == null || !capabilities!.enabled)
                   TextButton.icon(
                     onPressed: onReload,
                     icon: const Icon(Icons.sync),
-                    label: const Text('读取能力'),
+                    label: Text(capabilities == null ? '读取能力' : '重新检查'),
                   ),
                 const Spacer(),
-                if (onConnect == null && !connected)
+                if (!configured && !connected)
                   TextButton(onPressed: onConfigure, child: const Text('先配置')),
                 FilledButton.icon(
                   onPressed: state == VoiceConnectionState.connecting
@@ -396,7 +404,13 @@ class _ConnectionPanel extends StatelessWidget {
                       ? onDisconnect
                       : onConnect,
                   icon: Icon(connected ? Icons.link_off : Icons.mic),
-                  label: Text(connected ? '结束会话' : '开始语音'),
+                  label: Text(
+                    connected
+                        ? '结束会话'
+                        : capabilities != null && !capabilities!.enabled
+                        ? '语音未启用'
+                        : '开始语音',
+                  ),
                 ),
               ],
             ),

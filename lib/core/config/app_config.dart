@@ -8,7 +8,7 @@ class AppConfig {
   factory AppConfig.defaults() => const AppConfig(
     baseUrl: String.fromEnvironment(
       'API_BASE_URL',
-      defaultValue: 'http://10.0.2.2:8080',
+      defaultValue: 'http://10.0.2.2:8000',
     ),
     accessToken: String.fromEnvironment('APP_ACCESS_TOKEN'),
     userId: String.fromEnvironment('APP_USER_ID'),

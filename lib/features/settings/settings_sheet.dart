@@ -1,11 +1,19 @@
 import 'package:flutter/material.dart';
 
+import '../../core/api/api_models.dart';
 import '../../core/config/app_config.dart';
 
 class SettingsSheet extends StatefulWidget {
-  const SettingsSheet({super.key, required this.config});
+  const SettingsSheet({
+    super.key,
+    required this.config,
+    required this.user,
+    required this.onLogout,
+  });
 
   final AppConfig config;
+  final AuthUser? user;
+  final Future<void> Function() onLogout;
 
   @override
   State<SettingsSheet> createState() => _SettingsSheetState();
@@ -13,23 +21,16 @@ class SettingsSheet extends StatefulWidget {
 
 class _SettingsSheetState extends State<SettingsSheet> {
   late final TextEditingController _baseUrl;
-  late final TextEditingController _token;
-  late final TextEditingController _userId;
-  bool _showToken = false;
 
   @override
   void initState() {
     super.initState();
     _baseUrl = TextEditingController(text: widget.config.baseUrl);
-    _token = TextEditingController(text: widget.config.accessToken);
-    _userId = TextEditingController(text: widget.config.userId);
   }
 
   @override
   void dispose() {
     _baseUrl.dispose();
-    _token.dispose();
-    _userId.dispose();
     super.dispose();
   }
 
@@ -51,9 +52,27 @@ class _SettingsSheetState extends State<SettingsSheet> {
               Text('连接设置', style: Theme.of(context).textTheme.headlineSmall),
               const SizedBox(height: 8),
               Text(
-                'Token 只保存在本次进程内，不会把后端 AUTH_SECRET 写入安装包。',
+                '登录凭据已加密保存在系统安全存储中。',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
+              if (widget.user != null) ...[
+                const SizedBox(height: 18),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(
+                    child: Text(
+                      widget.user!.nickname.isEmpty
+                          ? 'U'
+                          : widget.user!.nickname.characters.first
+                                .toUpperCase(),
+                    ),
+                  ),
+                  title: Text(widget.user!.nickname),
+                  subtitle: widget.user!.email.isEmpty
+                      ? const Text('已登录')
+                      : Text(widget.user!.email),
+                ),
+              ],
               const SizedBox(height: 20),
               TextField(
                 controller: _baseUrl,
@@ -61,34 +80,8 @@ class _SettingsSheetState extends State<SettingsSheet> {
                 autocorrect: false,
                 decoration: const InputDecoration(
                   labelText: '后端地址',
-                  hintText: 'http://10.0.2.2:8080',
+                  hintText: 'http://10.0.2.2:8000',
                   prefixIcon: Icon(Icons.dns_outlined),
-                ),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: _token,
-                obscureText: !_showToken,
-                autocorrect: false,
-                enableSuggestions: false,
-                decoration: InputDecoration(
-                  labelText: 'App access token',
-                  prefixIcon: const Icon(Icons.key_outlined),
-                  suffixIcon: IconButton(
-                    onPressed: () => setState(() => _showToken = !_showToken),
-                    icon: Icon(
-                      _showToken ? Icons.visibility_off : Icons.visibility,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: _userId,
-                autocorrect: false,
-                decoration: const InputDecoration(
-                  labelText: 'user_id（历史列表需要）',
-                  prefixIcon: Icon(Icons.person_outline),
                 ),
               ),
               const SizedBox(height: 22),
@@ -108,12 +101,21 @@ class _SettingsSheetState extends State<SettingsSheet> {
                     context,
                     AppConfig(
                       baseUrl: baseUrl,
-                      accessToken: _token.text.trim(),
-                      userId: _userId.text.trim(),
+                      accessToken: widget.config.accessToken,
+                      userId: widget.config.userId,
                     ),
                   );
                 },
                 child: const Text('保存'),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  await widget.onLogout();
+                },
+                icon: const Icon(Icons.logout_rounded),
+                label: const Text('退出登录'),
               ),
             ],
           ),

@@ -31,6 +31,34 @@ class AgentApiClient {
     return base.replace(path: normalizedPath, queryParameters: query);
   }
 
+  Future<EmailCodeAccepted> requestEmailCode(String email) async {
+    return EmailCodeAccepted.fromJson(
+      await _request(
+        'POST',
+        '/auth/email/code',
+        body: <String, Object?>{'email': email.trim().toLowerCase()},
+        authenticated: false,
+      ),
+    );
+  }
+
+  Future<EmailAuthResult> verifyEmailCode({
+    required String email,
+    required String code,
+  }) async {
+    return EmailAuthResult.fromJson(
+      await _request(
+        'POST',
+        '/auth/email/verify',
+        body: <String, Object?>{
+          'email': email.trim().toLowerCase(),
+          'code': code.trim(),
+        },
+        authenticated: false,
+      ),
+    );
+  }
+
   Future<VoiceCapabilities> capabilities() async {
     return VoiceCapabilities.fromJson(
       await _request('GET', '/voice/capabilities'),
@@ -99,13 +127,16 @@ class AgentApiClient {
     String path, {
     Map<String, String>? query,
     Map<String, Object?>? body,
+    bool authenticated = true,
   }) async {
     try {
       final request = await _httpClient.openUrl(method, uri(path, query));
-      request.headers.set(
-        HttpHeaders.authorizationHeader,
-        'Bearer ${config.accessToken.trim()}',
-      );
+      if (authenticated) {
+        request.headers.set(
+          HttpHeaders.authorizationHeader,
+          'Bearer ${config.accessToken.trim()}',
+        );
+      }
       request.headers.contentType = ContentType.json;
       if (body != null) {
         request.write(jsonEncode(body));
@@ -114,13 +145,28 @@ class AgentApiClient {
       final text = await utf8.decoder.bind(response).join();
       final decoded = text.isEmpty ? <String, dynamic>{} : jsonDecode(text);
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        final detail = decoded is Map<String, dynamic>
-            ? decoded['detail']?.toString() ?? text
-            : text;
+        final detail = _errorMessage(decoded, text);
         throw ApiException(response.statusCode, detail);
       }
       if (decoded is! Map<String, dynamic>) {
         throw const FormatException('Expected a JSON object');
+      }
+      if (decoded.containsKey('code') && decoded.containsKey('data')) {
+        final code = decoded['code'];
+        if (code != 200) {
+          throw ApiException(
+            response.statusCode,
+            decoded['message']?.toString() ?? '请求失败',
+          );
+        }
+        final data = decoded['data'];
+        if (data == null) {
+          return <String, dynamic>{};
+        }
+        if (data is! Map<String, dynamic>) {
+          throw const FormatException('Expected response data to be an object');
+        }
+        return data;
       }
       return decoded;
     } on ApiException {
@@ -130,6 +176,24 @@ class AgentApiClient {
     } on HandshakeException catch (error) {
       throw ApiException(0, 'TLS 握手失败：${error.message}');
     }
+  }
+
+  String _errorMessage(Object? decoded, String fallback) {
+    if (decoded is! Map<String, dynamic>) {
+      return fallback.isEmpty ? '请求失败' : fallback;
+    }
+    final detail = decoded['detail'];
+    if (detail is String && detail.isNotEmpty) {
+      return detail;
+    }
+    if (detail is List && detail.isNotEmpty) {
+      final first = detail.first;
+      if (first is Map<String, dynamic>) {
+        return first['msg']?.toString() ?? '请求参数不正确';
+      }
+    }
+    return decoded['message']?.toString() ??
+        (fallback.isEmpty ? '请求失败' : fallback);
   }
 
   void close() => _httpClient.close(force: true);
