@@ -116,4 +116,39 @@ void main() {
       ),
     );
   });
+
+  test('response audio status preserves playback completion semantics', () {
+    expect(
+      responseAudioStatus(<String, dynamic>{
+        'status': 'completed',
+        'audio_status': 'completed',
+      }),
+      VoiceAudioStatus.completed,
+    );
+    expect(
+      shouldDrainResponseAudio(<String, dynamic>{
+        'status': 'failed',
+        'audio_status': 'failed',
+      }),
+      isTrue,
+    );
+    expect(
+      shouldDrainResponseAudio(<String, dynamic>{
+        'status': 'cancelled',
+        'audio_status': 'cancelled',
+      }),
+      isFalse,
+    );
+  });
+
+  test('legacy response.done events remain compatible', () {
+    expect(
+      responseAudioStatus(<String, dynamic>{'status': 'completed'}),
+      VoiceAudioStatus.completed,
+    );
+    expect(
+      responseAudioStatus(<String, dynamic>{'status': 'cancelled'}),
+      VoiceAudioStatus.cancelled,
+    );
+  });
 }

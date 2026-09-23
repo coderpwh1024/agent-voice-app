@@ -9,6 +9,23 @@ const String zeroUuid = '00000000-0000-0000-0000-000000000000';
 
 final Random _secureRandom = Random.secure();
 
+enum VoiceAudioStatus { queued, running, completed, cancelled, failed }
+
+VoiceAudioStatus responseAudioStatus(Map<String, dynamic> event) {
+  final value = event['audio_status'];
+  for (final status in VoiceAudioStatus.values) {
+    if (status.name == value) {
+      return status;
+    }
+  }
+  return event['status'] == 'cancelled'
+      ? VoiceAudioStatus.cancelled
+      : VoiceAudioStatus.completed;
+}
+
+bool shouldDrainResponseAudio(Map<String, dynamic> event) =>
+    responseAudioStatus(event) != VoiceAudioStatus.cancelled;
+
 String newEventId() {
   final bytes = Uint8List.fromList(
     List<int>.generate(16, (_) => _secureRandom.nextInt(256)),

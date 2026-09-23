@@ -3,20 +3,31 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+sealed class VoiceSocketMessage {
+  const VoiceSocketMessage();
+}
+
+final class VoiceSocketEventMessage extends VoiceSocketMessage {
+  const VoiceSocketEventMessage(this.event);
+
+  final Map<String, dynamic> event;
+}
+
+final class VoiceSocketAudioMessage extends VoiceSocketMessage {
+  const VoiceSocketAudioMessage(this.bytes);
+
+  final Uint8List bytes;
+}
+
 class VoiceSocket {
   VoiceSocket._(this._socket);
 
   final WebSocket _socket;
-  final StreamController<Map<String, dynamic>> _events =
-      StreamController<Map<String, dynamic>>.broadcast();
-  final StreamController<Uint8List> _audio =
-      StreamController<Uint8List>.broadcast();
-  final StreamController<Object> _errors = StreamController<Object>.broadcast();
+  final StreamController<VoiceSocketMessage> _messages =
+      StreamController<VoiceSocketMessage>();
   StreamSubscription<dynamic>? _subscription;
 
-  Stream<Map<String, dynamic>> get events => _events.stream;
-  Stream<Uint8List> get audio => _audio.stream;
-  Stream<Object> get errors => _errors.stream;
+  Stream<VoiceSocketMessage> get messages => _messages.stream;
 
   static Future<VoiceSocket> connect(
     Uri uri, {
@@ -39,29 +50,29 @@ class VoiceSocket {
           if (value is String) {
             final decoded = jsonDecode(value);
             if (decoded is Map<String, dynamic>) {
-              _events.add(decoded);
+              _messages.add(VoiceSocketEventMessage(decoded));
             } else {
               throw const FormatException('Voice event must be a JSON object');
             }
           } else if (value is List<int>) {
-            _audio.add(Uint8List.fromList(value));
+            _messages.add(VoiceSocketAudioMessage(Uint8List.fromList(value)));
           }
         } catch (error, stackTrace) {
-          _errors.add(error);
-          _events.addError(error, stackTrace);
+          _messages.addError(error, stackTrace);
         }
       },
       onError: (Object error, StackTrace stackTrace) {
-        _errors.add(error);
-        _events.addError(error, stackTrace);
+        _messages.addError(error, stackTrace);
       },
       onDone: () {
-        if (!_events.isClosed) {
-          _events.add(<String, dynamic>{
-            'type': 'socket.closed',
-            'code': _socket.closeCode,
-            'reason': _socket.closeReason,
-          });
+        if (!_messages.isClosed) {
+          _messages.add(
+            VoiceSocketEventMessage(<String, dynamic>{
+              'type': 'socket.closed',
+              'code': _socket.closeCode,
+              'reason': _socket.closeReason,
+            }),
+          );
         }
       },
       cancelOnError: false,
@@ -78,8 +89,6 @@ class VoiceSocket {
   ]) async {
     await _socket.close(code, reason);
     await _subscription?.cancel();
-    await _events.close();
-    await _audio.close();
-    await _errors.close();
+    await _messages.close();
   }
 }

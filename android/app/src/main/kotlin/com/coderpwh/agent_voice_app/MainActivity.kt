@@ -287,6 +287,7 @@ private class VoiceAudioEngine(
     fun start() {
         if (!running.compareAndSet(false, true)) return
         try {
+            paused.set(false)
             invalidResponses.clear()
             commands.clear()
             markers.clear()
@@ -564,6 +565,7 @@ private class VoiceAudioEngine(
         commands.removeIf { it.responseId == responseId }
         markers.removeIf { it.responseId == responseId }
         synchronized(playbackLock) {
+            paused.set(false)
             track?.pause()
             track?.flush()
             writtenFrames = track?.playbackHeadPosition?.toLong()?.and(0xffffffffL) ?: 0
@@ -583,6 +585,7 @@ private class VoiceAudioEngine(
 
     fun stop() {
         if (!running.compareAndSet(true, false)) return
+        paused.set(false)
         captureThread?.interrupt()
         playbackThread?.interrupt()
         monitorThread?.interrupt()

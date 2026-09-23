@@ -56,8 +56,7 @@ class VoiceSessionController extends ChangeNotifier {
   VoiceSocket? _socket;
   VoiceSession? _session;
   VoiceCapabilities? _capabilities;
-  StreamSubscription<Map<String, dynamic>>? _eventSubscription;
-  StreamSubscription<Uint8List>? _socketAudioSubscription;
+  StreamSubscription<void>? _socketSubscription;
   StreamSubscription<Uint8List>? _microphoneSubscription;
   StreamSubscription<Map<String, dynamic>>? _playbackSubscription;
   Completer<void>? _readyCompleter;
@@ -154,14 +153,15 @@ class VoiceSessionController extends ChangeNotifier {
       );
       _socket = socket;
       _readyCompleter = Completer<void>();
-      _eventSubscription = socket.events.listen(
-        (event) => unawaited(_handleEvent(event)),
-        onError: _recordError,
-      );
-      _socketAudioSubscription = socket.audio.listen(
-        (bytes) => unawaited(_handleAudio(bytes)),
-        onError: _recordError,
-      );
+      _socketSubscription = socket.messages
+          .asyncMap((message) async {
+            if (message is VoiceSocketEventMessage) {
+              await _handleEvent(message.event);
+            } else if (message is VoiceSocketAudioMessage) {
+              await _handleAudio(message.bytes);
+            }
+          })
+          .listen(null, onError: _recordError);
       _microphoneSubscription = _audio.microphoneFrames.listen(
         _handleMicrophone,
         onError: _recordError,
@@ -329,13 +329,24 @@ class VoiceSessionController extends ChangeNotifier {
         if (responseId != null) {
           _invalidResponses.add(responseId);
           await _audio.cancel(responseId);
+          if (_currentResponseId == responseId) {
+            _currentResponseId = null;
+          }
         }
         _setState(VoiceConnectionState.listening);
       case 'response.done':
-        if (responseId != null && !_invalidResponses.contains(responseId)) {
+        final shouldDrain =
+            responseId != null &&
+            !_invalidResponses.contains(responseId) &&
+            shouldDrainResponseAudio(event);
+        if (shouldDrain) {
           await _audio.completeResponse(responseId);
+        } else {
+          if (_currentResponseId == responseId) {
+            _currentResponseId = null;
+          }
+          _setState(VoiceConnectionState.listening);
         }
-        _setState(VoiceConnectionState.listening);
       case 'playback.resume':
         if (responseId != null && !_invalidResponses.contains(responseId)) {
           await _audio.resume();
@@ -351,7 +362,7 @@ class VoiceSessionController extends ChangeNotifier {
         _recordError(event['code']?.toString() ?? '未知语音错误');
       case 'session.closed':
       case 'socket.closed':
-        await _teardown(sendClose: false);
+        unawaited(_teardown(sendClose: false));
     }
   }
 
@@ -426,6 +437,9 @@ class VoiceSessionController extends ChangeNotifier {
             'response_id': responseId,
           }),
         );
+        if (_currentResponseId == responseId) {
+          _currentResponseId = null;
+        }
         _setState(VoiceConnectionState.listening);
     }
   }
@@ -445,12 +459,10 @@ class VoiceSessionController extends ChangeNotifier {
     }
     await _microphoneSubscription?.cancel();
     await _playbackSubscription?.cancel();
-    await _socketAudioSubscription?.cancel();
-    await _eventSubscription?.cancel();
+    await _socketSubscription?.cancel();
     _microphoneSubscription = null;
     _playbackSubscription = null;
-    _socketAudioSubscription = null;
-    _eventSubscription = null;
+    _socketSubscription = null;
     await _audio.stop();
     await socket?.close();
     if (sendClose && oldSession != null) {
