@@ -453,7 +453,9 @@ class VoiceSessionController extends ChangeNotifier {
         _readyCompleter?.complete();
         _setState(VoiceConnectionState.ready);
       case 'input.started':
-        _setState(VoiceConnectionState.listening);
+        if (_currentResponseId == null) {
+          _setState(VoiceConnectionState.listening);
+        }
       case 'transcript.partial':
         _partialTranscript = event['text'] as String? ?? '';
         notifyListeners();
@@ -465,7 +467,15 @@ class VoiceSessionController extends ChangeNotifier {
         } else if (text.trim().isNotEmpty) {
           _messages.add(ConversationEntry(role: 'human', text: text.trim()));
         }
-        _setState(VoiceConnectionState.thinking);
+        if (text.trim().isEmpty) {
+          _setState(
+            _currentResponseId == null
+                ? VoiceConnectionState.listening
+                : VoiceConnectionState.speaking,
+          );
+        } else {
+          _setState(VoiceConnectionState.thinking);
+        }
       case 'response.started':
         _currentResponseId = responseId;
         if (responseId != null) {
@@ -532,7 +542,9 @@ class VoiceSessionController extends ChangeNotifier {
                   .substring(keyword.length)
                   .replaceFirst(RegExp(r'^[\s，,。！？!?、]+'), '')
             : transcript;
-        if (command != null && command.isNotEmpty) {
+        if (command != null &&
+            command.isNotEmpty &&
+            !_isNonActionableVoiceText(command)) {
           _messages.add(ConversationEntry(role: 'human', text: command));
         }
         _pendingWakeTranscript = null;
@@ -789,6 +801,19 @@ class VoiceSessionController extends ChangeNotifier {
     _api.close();
     super.dispose();
   }
+}
+
+bool _isNonActionableVoiceText(String text) {
+  final normalized = text.replaceAll(RegExp(r'[\s，,。！？!?、]+'), '');
+  return const <String>{
+    '嗯',
+    '嗯嗯',
+    '呃',
+    '额',
+    '啊',
+    '呢',
+    '那',
+  }.contains(normalized);
 }
 
 ({double rmsDbfs, double peakDbfs, int clipped}) _measure(Uint8List bytes) {

@@ -282,8 +282,6 @@ private class VoiceAudioEngine(
     private var previousAudioMode: Int? = null
     private var previousSpeakerphoneOn: Boolean? = null
     private var previousCommunicationDevice: AudioDeviceInfo? = null
-    private var previousVoiceCallVolume: Int? = null
-    private var appliedVoiceCallVolume: Int? = null
     private var conversationMode = false
 
     fun start(conversation: Boolean): Map<String, Any> {
@@ -336,48 +334,18 @@ private class VoiceAudioEngine(
                 if (!audioManager.setCommunicationDevice(speaker)) {
                     throw IllegalStateException("Unable to route voice playback to speaker")
                 }
-                ensureAudibleSpeakerVolume()
             }
         } else {
             @Suppress("DEPRECATION")
             previousSpeakerphoneOn = audioManager.isSpeakerphoneOn
             @Suppress("DEPRECATION")
             audioManager.isSpeakerphoneOn = true
-            ensureAudibleSpeakerVolume()
-        }
-    }
-
-    private fun ensureAudibleSpeakerVolume() {
-        val current = audioManager.getStreamVolume(AudioManager.STREAM_VOICE_CALL)
-        val maximum = audioManager.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
-        val minimumAudible = (maximum * 7 + 9) / 10
-        if (current < minimumAudible) {
-            previousVoiceCallVolume = current
-            appliedVoiceCallVolume = minimumAudible
-            audioManager.setStreamVolume(
-                AudioManager.STREAM_VOICE_CALL,
-                minimumAudible,
-                0,
-            )
         }
     }
 
     private fun restoreAudioRoute() {
         if (!audioRouteConfigured) return
         try {
-            val appliedVolume = appliedVoiceCallVolume
-            val previousVolume = previousVoiceCallVolume
-            if (
-                appliedVolume != null &&
-                previousVolume != null &&
-                audioManager.getStreamVolume(AudioManager.STREAM_VOICE_CALL) == appliedVolume
-            ) {
-                audioManager.setStreamVolume(
-                    AudioManager.STREAM_VOICE_CALL,
-                    previousVolume,
-                    0,
-                )
-            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val previousDevice = previousCommunicationDevice
                 val isStillAvailable = previousDevice != null &&
@@ -396,8 +364,6 @@ private class VoiceAudioEngine(
             previousAudioMode = null
             previousSpeakerphoneOn = null
             previousCommunicationDevice = null
-            previousVoiceCallVolume = null
-            appliedVoiceCallVolume = null
             audioRouteConfigured = false
         }
     }

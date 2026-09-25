@@ -218,6 +218,13 @@ void main() {
         'text': '完整回答',
       }),
     );
+    await waitUntil(() => controller.state == VoiceConnectionState.speaking);
+    socket!.add(jsonEncode(<String, Object?>{'type': 'input.started'}));
+    socket!.add(
+      jsonEncode(<String, Object?>{'type': 'transcript.final', 'text': ''}),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(controller.state, VoiceConnectionState.speaking);
     socket!.add(
       outputAudioFrame(connectionId: connectionId, responseId: responseId),
     );
@@ -244,6 +251,10 @@ void main() {
     expect(audio.operations, <String>['audio', 'segment', 'response']);
     expect(controller.state, VoiceConnectionState.speaking);
     expect(controller.currentResponseId, responseId);
+    expect(
+      controller.messages.where((entry) => entry.role == 'human'),
+      isEmpty,
+    );
 
     audio.playback.add(<String, dynamic>{
       'type': 'response.finished',
