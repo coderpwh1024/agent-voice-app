@@ -2,6 +2,7 @@ import 'package:agent_voice_app/app.dart';
 import 'package:agent_voice_app/core/api/api_models.dart';
 import 'package:agent_voice_app/core/auth/auth_session_store.dart';
 import 'package:agent_voice_app/core/config/app_config.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class EmptySessionStore extends AuthSessionStore {
@@ -53,8 +54,24 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('未连接'), findsOneWidget);
-    expect(find.text('开始语音'), findsOneWidget);
+    expect(find.text('嗨，我是小美'), findsOneWidget);
+    expect(find.textContaining('“小美”'), findsWidgets);
+    expect(find.text('现在开始说话'), findsOneWidget);
+    expect(find.byType(Switch), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    for (final state in <AppLifecycleState>[
+      AppLifecycleState.inactive,
+      AppLifecycleState.hidden,
+      AppLifecycleState.paused,
+      AppLifecycleState.hidden,
+      AppLifecycleState.inactive,
+      AppLifecycleState.resumed,
+    ]) {
+      tester.binding.handleAppLifecycleStateChanged(state);
+    }
+    await tester.pump();
+    expect(find.text('嗨，我是小美'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.byTooltip('个人主页'));

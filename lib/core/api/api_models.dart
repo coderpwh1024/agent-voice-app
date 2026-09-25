@@ -117,6 +117,9 @@ class VoiceCapabilities {
     required this.voiceOptions,
     required this.defaultVoice,
     required this.agents,
+    required this.wakeWord,
+    required this.clientVad,
+    required this.audioMetricsSeconds,
   });
 
   factory VoiceCapabilities.fromJson(Map<String, dynamic> json) {
@@ -156,6 +159,13 @@ class VoiceCapabilities {
       agents: (json['agents'] as List<dynamic>? ?? const [])
           .map((item) => AgentCapability.fromJson(item as Map<String, dynamic>))
           .toList(growable: false),
+      wakeWord: WakeWordCapability.fromJson(
+        Map<String, dynamic>.from(json['wake_word'] as Map? ?? const {}),
+      ),
+      clientVad: ClientVadCapability.fromJson(
+        Map<String, dynamic>.from(json['client_vad'] as Map? ?? const {}),
+      ),
+      audioMetricsSeconds: json['audio_metrics_seconds'] as int? ?? 5,
     );
   }
 
@@ -164,12 +174,62 @@ class VoiceCapabilities {
   final List<VoiceOption> voiceOptions;
   final String? defaultVoice;
   final List<AgentCapability> agents;
+  final WakeWordCapability wakeWord;
+  final ClientVadCapability clientVad;
+  final int audioMetricsSeconds;
 
   List<String> get voices =>
       voiceOptions.map((option) => option.id).toList(growable: false);
 
   VoiceOption? voiceOption(String? id) =>
       voiceOptions.where((option) => option.id == id).firstOrNull;
+}
+
+class WakeWordCapability {
+  const WakeWordCapability({
+    required this.enabled,
+    required this.keyword,
+    required this.confirmWithAsr,
+    required this.preRollMs,
+    required this.score,
+    required this.threshold,
+  });
+
+  factory WakeWordCapability.fromJson(Map<String, dynamic> json) =>
+      WakeWordCapability(
+        enabled: json['enabled'] as bool? ?? false,
+        keyword: json['keyword']?.toString() ?? '小美',
+        confirmWithAsr: json['confirm_with_asr'] as bool? ?? true,
+        preRollMs: json['pre_roll_ms'] as int? ?? 1200,
+        score: (json['kws_score'] as num?)?.toDouble() ?? 1,
+        threshold: (json['kws_threshold'] as num?)?.toDouble() ?? 0.5,
+      );
+
+  final bool enabled;
+  final String keyword;
+  final bool confirmWithAsr;
+  final int preRollMs;
+  final double score;
+  final double threshold;
+}
+
+class ClientVadCapability {
+  const ClientVadCapability({
+    required this.enabled,
+    required this.rmsDbfs,
+    required this.speechFrames,
+  });
+
+  factory ClientVadCapability.fromJson(Map<String, dynamic> json) =>
+      ClientVadCapability(
+        enabled: json['enabled'] as bool? ?? true,
+        rmsDbfs: (json['rms_dbfs'] as num?)?.toDouble() ?? -42,
+        speechFrames: json['speech_frames'] as int? ?? 3,
+      );
+
+  final bool enabled;
+  final double rmsDbfs;
+  final int speechFrames;
 }
 
 class VoiceSession {
@@ -179,6 +239,8 @@ class VoiceSession {
     required this.agentId,
     required this.voice,
     required this.expiresAt,
+    this.activation = 'tap',
+    this.wakeStatus = 'not_required',
   });
 
   factory VoiceSession.fromJson(Map<String, dynamic> json) => VoiceSession(
@@ -187,6 +249,8 @@ class VoiceSession {
     agentId: json['agent_id'] as String,
     voice: json['voice'] as String,
     expiresAt: DateTime.parse(json['expires_at'] as String),
+    activation: json['activation'] as String? ?? 'tap',
+    wakeStatus: json['wake_status'] as String? ?? 'not_required',
   );
 
   final String sessionId;
@@ -194,6 +258,8 @@ class VoiceSession {
   final String agentId;
   final String voice;
   final DateTime expiresAt;
+  final String activation;
+  final String wakeStatus;
 }
 
 class ChatItem {

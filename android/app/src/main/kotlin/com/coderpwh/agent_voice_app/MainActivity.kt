@@ -152,12 +152,13 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler {
         try {
             when (call.method) {
                 "requestMicrophonePermission" -> requestMicrophonePermission(result)
+                "applicationSupportDirectory" -> result.success(filesDir.absolutePath)
                 "start" -> {
                     if (!hasMicrophonePermission()) {
                         result.error("microphone_permission", "Microphone permission is required", null)
                     } else {
-                        audio.start()
-                        result.success(null)
+                        val conversation = call.argument<String>("mode") != "standby"
+                        result.success(audio.start(conversation))
                     }
                 }
                 "enqueuePlayback" -> {
@@ -283,24 +284,39 @@ private class VoiceAudioEngine(
     private var previousCommunicationDevice: AudioDeviceInfo? = null
     private var previousVoiceCallVolume: Int? = null
     private var appliedVoiceCallVolume: Int? = null
+    private var conversationMode = false
 
-    fun start() {
-        if (!running.compareAndSet(false, true)) return
+    fun start(conversation: Boolean): Map<String, Any> {
+        if (running.get() && conversationMode == conversation) return processingState()
+        if (running.get()) stop()
+        if (!running.compareAndSet(false, true)) return processingState()
         try {
+            conversationMode = conversation
             paused.set(false)
             invalidResponses.clear()
             commands.clear()
             markers.clear()
             writtenFrames = 0
-            configureAudioRoute()
-            startPlayback()
+            if (conversation) {
+                configureAudioRoute()
+                startPlayback()
+            }
             startCapture()
-            startMonitor()
+            if (conversation) startMonitor()
         } catch (error: Exception) {
             stop()
             throw error
         }
+        return processingState()
     }
+
+    private fun processingState(): Map<String, Any> = mapOf(
+        "mode" to if (conversationMode) "conversation" else "standby",
+        "aecAvailable" to AcousticEchoCanceler.isAvailable(),
+        "aecEnabled" to (aec?.enabled == true),
+        "noiseSuppressionAvailable" to NoiseSuppressor.isAvailable(),
+        "noiseSuppressionEnabled" to (noiseSuppressor?.enabled == true),
+    )
 
     private fun configureAudioRoute() {
         previousAudioMode = audioManager.mode
@@ -367,7 +383,7 @@ private class VoiceAudioEngine(
                 val isStillAvailable = previousDevice != null &&
                     audioManager.availableCommunicationDevices.any { it.id == previousDevice.id }
                 if (isStillAvailable) {
-                    audioManager.setCommunicationDevice(previousDevice!!)
+                    audioManager.setCommunicationDevice(previousDevice)
                 } else {
                     audioManager.clearCommunicationDevice()
                 }
@@ -394,7 +410,11 @@ private class VoiceAudioEngine(
         )
         val bufferSize = max(minimum, 1280)
         val recorder = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+            if (conversationMode) {
+                MediaRecorder.AudioSource.VOICE_COMMUNICATION
+            } else {
+                MediaRecorder.AudioSource.VOICE_RECOGNITION
+            },
             INPUT_SAMPLE_RATE,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
@@ -405,7 +425,7 @@ private class VoiceAudioEngine(
             throw IllegalStateException("AudioRecord initialization failed")
         }
         record = recorder
-        if (AcousticEchoCanceler.isAvailable()) {
+        if (conversationMode && AcousticEchoCanceler.isAvailable()) {
             aec = AcousticEchoCanceler.create(recorder.audioSessionId)?.apply { enabled = true }
         }
         if (NoiseSuppressor.isAvailable()) {

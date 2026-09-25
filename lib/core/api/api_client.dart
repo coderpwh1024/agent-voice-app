@@ -137,15 +137,25 @@ class AgentApiClient {
     required String agentId,
     required String voice,
     String? threadId,
+    String activation = 'tap',
+    String? wakeWord,
+    String? wakeEngine,
+    int? preRollSamples,
   }) async {
     final body = <String, Object?>{
       'agent_id': agentId,
       'voice': voice,
       'language': 'zh',
       'turn_detection': 'server_vad',
+      'activation': activation,
     };
     if (threadId != null) {
       body['thread_id'] = threadId;
+    }
+    if (activation == 'wake_word') {
+      body['wake_word'] = wakeWord;
+      body['wake_engine'] = wakeEngine;
+      body['pre_roll_samples'] = preRollSamples ?? 0;
     }
     return VoiceSession.fromJson(
       await _request('POST', '/voice/sessions', body: body),

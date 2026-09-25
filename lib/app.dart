@@ -44,6 +44,8 @@ class _AgentVoiceAppState extends State<AgentVoiceApp> {
   }
 
   Future<void> _showSettings(BuildContext context) async {
+    await _controller.disableWakeWord();
+    if (!context.mounted) return;
     final config = await showModalBottomSheet<AppConfig>(
       context: context,
       isScrollControlled: true,
@@ -73,6 +75,8 @@ class _AgentVoiceAppState extends State<AgentVoiceApp> {
     if (user == null) {
       return;
     }
+    await _controller.disableWakeWord();
+    if (!context.mounted) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => ProfilePage(
@@ -151,6 +155,7 @@ class _AgentVoiceAppState extends State<AgentVoiceApp> {
   }
 
   Future<void> _logout() async {
+    await _controller.disableWakeWord();
     await _controller.disconnect();
     try {
       await _sessionStore.clear();
@@ -183,22 +188,27 @@ class _AgentVoiceAppState extends State<AgentVoiceApp> {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xff6157f5),
+          seedColor: const Color(0xffd87568),
           brightness: Brightness.light,
+          surface: const Color(0xfffffcfa),
         ),
-        scaffoldBackgroundColor: const Color(0xfff8f8fc),
+        scaffoldBackgroundColor: const Color(0xfffbf8f4),
         useMaterial3: true,
         inputDecorationTheme: InputDecorationTheme(
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Color(0xffdfe1eb)),
+            borderSide: const BorderSide(color: Color(0xffeadfd9)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: Color(0xffd87568), width: 1.4),
           ),
           filled: true,
-          fillColor: const Color(0xfff7f7fb),
+          fillColor: const Color(0xfffffaf7),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
-            vertical: 17,
+            vertical: 15,
           ),
         ),
         filledButtonTheme: FilledButtonThemeData(
@@ -215,34 +225,60 @@ class _AgentVoiceAppState extends State<AgentVoiceApp> {
         ),
         appBarTheme: const AppBarTheme(
           centerTitle: false,
-          backgroundColor: Color(0xfff8f8fc),
+          backgroundColor: Color(0xfffbf8f4),
           surfaceTintColor: Colors.transparent,
           titleTextStyle: TextStyle(
-            color: Color(0xff17151a),
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.4,
+            color: Color(0xff3f302c),
+            fontSize: 21,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.5,
           ),
-          iconTheme: IconThemeData(color: Color(0xff17151a)),
+          iconTheme: IconThemeData(color: Color(0xff4b3a35)),
         ),
         cardTheme: CardThemeData(
           elevation: 0,
           color: Colors.white,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-            side: const BorderSide(color: Color(0xffece9ef)),
+            borderRadius: BorderRadius.circular(24),
+            side: const BorderSide(color: Color(0xffeee5df)),
           ),
         ),
       ),
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xff7c9cff),
+          seedColor: const Color(0xffe58b7d),
           brightness: Brightness.dark,
+          surface: const Color(0xff211d1b),
         ),
+        scaffoldBackgroundColor: const Color(0xff171412),
         useMaterial3: true,
-        inputDecorationTheme: const InputDecorationTheme(
-          border: OutlineInputBorder(),
+        inputDecorationTheme: InputDecorationTheme(
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
           filled: true,
+          fillColor: const Color(0xff2d2825),
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xff171412),
+          surfaceTintColor: Colors.transparent,
+          titleTextStyle: TextStyle(
+            color: Color(0xfffff8f2),
+            fontSize: 21,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.5,
+          ),
+          iconTheme: IconThemeData(color: Color(0xfffff8f2)),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(0, 54),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            textStyle: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ),
       ),
       home: _restoringSession

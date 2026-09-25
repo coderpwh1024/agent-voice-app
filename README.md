@@ -19,8 +19,11 @@
 - 用户线程列表与历史记录恢复
 - Android `VOICE_COMMUNICATION`、`AcousticEchoCanceler`、`NoiseSuppressor`
 - iOS `AVAudioSession.voiceChat`、Voice Processing 与系统音频转换
+- sherpa-onnx 离线中文唤醒词“小美”，带 1.2 秒前滚音频
+- 唤醒后的百炼 ASR 二次确认，误唤醒自动关闭并返回待机
+- 本地能量 VAD 自动插话，以及 AEC、降噪、音量和削波质量上报
 
-本地关键词唤醒属于规划中的 P3。当前版本使用“开始语音”按钮进入前台连续会话；尚未绑定 sherpa-onnx 模型，也不声明后台唤醒已完成。AEC、蓝牙/来电切换和插话效果必须在目标真机上验收。
+唤醒目前是 App 前台待机能力：进入首页后默认启动“小美”离线关键词检测，命中后才建立网络语音会话，无需手动打开开关。应用进入系统挂起状态或被用户结束后不承诺继续唤醒；Android 后台前台服务与 iOS 后台录音需要单独的产品权限和上架策略。AEC、蓝牙/来电切换、误唤醒率和插话效果仍必须在目标真机上验收。
 
 ## 后端准备
 
@@ -94,7 +97,7 @@ Android Manifest 当前允许明文 HTTP，仅用于本地开发。发布前应�
 lib/
 ├── core/api/                  HTTP、WebSocket、DTO、二进制协议
 ├── core/auth/                 登录态安全存储
-├── core/audio/                Flutter 原生音频桥
+├── core/audio/                Flutter 原生音频桥与 sherpa-onnx 唤醒引擎
 ├── core/config/               运行配置
 ├── features/auth/             登录、注册与邮箱验证码页面
 ├── features/voice_session/    会话状态、打断、播放确认、主界面
@@ -105,7 +108,7 @@ ios/                           AVAudioEngine / Voice Processing
 test/                          协议契约与 Widget 测试
 ```
 
-麦克风只有一条采集链路。Android 每 40 ms 发送一块 PCM；iOS 在原生音频线程完成硬件采样率到 16 kHz 的转换。Dart 层只封装网络帧与维护会话状态，不在 UI isolate 做 DSP。
+麦克风只有一条采集链路。Android 每 40 ms 发送一块 PCM；iOS 在原生音频线程完成硬件采样率到 16 kHz 的转换。待机音频送入独立 isolate 中的 sherpa-onnx，不上传；进入会话后才发送给后端。模型来源、许可和校验值见 `assets/models/sherpa_kws/MODEL_SOURCE.md`。
 
 ## 构建与验证
 

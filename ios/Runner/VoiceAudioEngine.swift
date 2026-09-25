@@ -8,6 +8,8 @@ final class IOSVoiceAudioEngine: NSObject {
   private var microphoneSink: FlutterEventSink?
   private var playbackSink: FlutterEventSink?
   private var running = false
+  private var conversationMode = false
+  private var voiceProcessingEnabled = false
   private var invalidResponses = Set<String>()
   private var pendingBuffers: [SegmentKey: Int] = [:]
   private var completedSegments: [SegmentKey: Int] = [:]
@@ -38,9 +40,15 @@ final class IOSVoiceAudioEngine: NSObject {
       switch call.method {
       case "requestMicrophonePermission":
         requestPermission(result)
+      case "applicationSupportDirectory":
+        guard let directory = FileManager.default.urls(
+          for: .applicationSupportDirectory,
+          in: .userDomainMask
+        ).first else { throw AudioError.supportDirectoryUnavailable }
+        result(directory.path)
       case "start":
-        try start()
-        result(nil)
+        let conversation = arguments?["mode"] as? String != "standby"
+        result(try start(conversation: conversation))
       case "enqueuePlayback":
         guard
           let bytes = (arguments?["pcm"] as? FlutterStandardTypedData)?.data,
@@ -101,34 +109,37 @@ final class IOSVoiceAudioEngine: NSObject {
     }
   }
 
-  private func start() throws {
-    guard !running else { return }
+  private func start(conversation: Bool) throws -> [String: Any] {
+    if running && conversationMode == conversation { return processingState() }
+    if running { stop() }
     guard AVAudioSession.sharedInstance().recordPermission == .granted else {
       throw AudioError.permissionDenied
     }
     let session = AVAudioSession.sharedInstance()
-    try session.setCategory(
-      .playAndRecord,
-      mode: .voiceChat,
-      options: [.defaultToSpeaker, .allowBluetoothHFP]
-    )
+    let options: AVAudioSession.CategoryOptions = conversation
+      ? [.defaultToSpeaker, .allowBluetoothHFP]
+      : [.allowBluetoothHFP]
+    try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
     try session.setPreferredIOBufferDuration(0.02)
     try session.setActive(true, options: .notifyOthersOnDeactivation)
 
     let input = engine.inputNode
     if #available(iOS 13.0, *) {
       try input.setVoiceProcessingEnabled(true)
+      voiceProcessingEnabled = input.isVoiceProcessingEnabled
     }
-    if !engine.attachedNodes.contains(player) {
-      engine.attach(player)
+    if conversation {
+      if !engine.attachedNodes.contains(player) {
+        engine.attach(player)
+      }
+      guard let outputFormat = AVAudioFormat(
+        commonFormat: .pcmFormatInt16,
+        sampleRate: 24_000,
+        channels: 1,
+        interleaved: true
+      ) else { throw AudioError.formatUnavailable }
+      engine.connect(player, to: engine.mainMixerNode, format: outputFormat)
     }
-    guard let outputFormat = AVAudioFormat(
-      commonFormat: .pcmFormatInt16,
-      sampleRate: 24_000,
-      channels: 1,
-      interleaved: true
-    ) else { throw AudioError.formatUnavailable }
-    engine.connect(player, to: engine.mainMixerNode, format: outputFormat)
 
     let inputFormat = input.outputFormat(forBus: 0)
     guard inputFormat.sampleRate > 0,
@@ -147,14 +158,26 @@ final class IOSVoiceAudioEngine: NSObject {
     }
     engine.prepare()
     try engine.start()
-    player.play()
+    if conversation { player.play() }
     stateQueue.sync {
       invalidResponses.removeAll()
       pendingBuffers.removeAll()
       completedSegments.removeAll()
       completedResponses.removeAll()
       running = true
+      conversationMode = conversation
     }
+    return processingState()
+  }
+
+  private func processingState() -> [String: Any] {
+    [
+      "mode": conversationMode ? "conversation" : "standby",
+      "aecAvailable": true,
+      "aecEnabled": voiceProcessingEnabled && conversationMode,
+      "noiseSuppressionAvailable": true,
+      "noiseSuppressionEnabled": voiceProcessingEnabled,
+    ]
   }
 
   private func convertCapture(
@@ -191,7 +214,7 @@ final class IOSVoiceAudioEngine: NSObject {
     let shouldSchedule = stateQueue.sync {
       running && !invalidResponses.contains(responseID)
     }
-    guard shouldSchedule else { return }
+    guard shouldSchedule && conversationMode else { return }
     guard data.count > 0, data.count.isMultiple(of: 2),
       let format = AVAudioFormat(
         commonFormat: .pcmFormatInt16,
@@ -295,6 +318,8 @@ final class IOSVoiceAudioEngine: NSObject {
     player.stop()
     engine.stop()
     engine.reset()
+    voiceProcessingEnabled = false
+    conversationMode = false
     try? AVAudioSession.sharedInstance().setActive(
       false,
       options: .notifyOthersOnDeactivation
@@ -343,6 +368,7 @@ private enum AudioError: LocalizedError {
   case permissionDenied
   case formatUnavailable
   case invalidPCM
+  case supportDirectoryUnavailable
 
   var errorDescription: String? {
     switch self {
@@ -350,6 +376,7 @@ private enum AudioError: LocalizedError {
     case .permissionDenied: "Microphone permission is required"
     case .formatUnavailable: "Required PCM format is unavailable"
     case .invalidPCM: "PCM data must contain little-endian Int16 samples"
+    case .supportDirectoryUnavailable: "Application support directory is unavailable"
     }
   }
 }

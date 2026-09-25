@@ -5,7 +5,7 @@ abstract interface class AudioBridge {
   Stream<Map<String, dynamic>> get playbackEvents;
 
   Future<bool> requestMicrophonePermission();
-  Future<void> start();
+  Future<AudioProcessingState> start(AudioCaptureMode mode);
   Future<void> enqueue(
     Uint8List pcm, {
     required String responseId,
@@ -21,6 +21,39 @@ abstract interface class AudioBridge {
   Future<void> pause();
   Future<void> resume();
   Future<void> stop();
+}
+
+enum AudioCaptureMode { standby, conversation }
+
+class AudioProcessingState {
+  const AudioProcessingState({
+    required this.mode,
+    required this.aecAvailable,
+    required this.aecEnabled,
+    required this.noiseSuppressionAvailable,
+    required this.noiseSuppressionEnabled,
+  });
+
+  factory AudioProcessingState.fromJson(Map<dynamic, dynamic>? json) {
+    final value = json ?? const <Object?, Object?>{};
+    return AudioProcessingState(
+      mode: value['mode'] == 'standby'
+          ? AudioCaptureMode.standby
+          : AudioCaptureMode.conversation,
+      aecAvailable: value['aecAvailable'] as bool? ?? false,
+      aecEnabled: value['aecEnabled'] as bool? ?? false,
+      noiseSuppressionAvailable:
+          value['noiseSuppressionAvailable'] as bool? ?? false,
+      noiseSuppressionEnabled:
+          value['noiseSuppressionEnabled'] as bool? ?? false,
+    );
+  }
+
+  final AudioCaptureMode mode;
+  final bool aecAvailable;
+  final bool aecEnabled;
+  final bool noiseSuppressionAvailable;
+  final bool noiseSuppressionEnabled;
 }
 
 class NativeAudioBridge implements AudioBridge {
@@ -49,7 +82,13 @@ class NativeAudioBridge implements AudioBridge {
   }
 
   @override
-  Future<void> start() => _methods.invokeMethod<void>('start');
+  Future<AudioProcessingState> start(AudioCaptureMode mode) async {
+    final value = await _methods.invokeMethod<Map<dynamic, dynamic>>(
+      'start',
+      <String, Object>{'mode': mode.name},
+    );
+    return AudioProcessingState.fromJson(value);
+  }
 
   @override
   Future<void> enqueue(

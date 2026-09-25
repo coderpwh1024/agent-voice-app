@@ -17,6 +17,20 @@ void main() {
         <String, String>{'id': 'Serena', 'name': '苏瑶', 'description': '温柔自然'},
       ],
       'agents': <Object?>[],
+      'wake_word': <String, Object>{
+        'enabled': true,
+        'keyword': '小美',
+        'confirm_with_asr': true,
+        'pre_roll_ms': 1200,
+        'kws_score': 1.0,
+        'kws_threshold': 0.5,
+      },
+      'client_vad': <String, Object>{
+        'enabled': true,
+        'rms_dbfs': -42,
+        'speech_frames': 3,
+      },
+      'audio_metrics_seconds': 5,
     });
 
     expect(capabilities.voices, <String>['Cherry', 'Serena']);
@@ -24,6 +38,12 @@ void main() {
     expect(capabilities.voiceOptions.first.displayName, '芊悦 · Cherry');
     expect(capabilities.voiceOption('Serena')?.name, '苏瑶');
     expect(capabilities.voiceOption('Serena')?.description, '温柔自然');
+    expect(capabilities.wakeWord.enabled, isTrue);
+    expect(capabilities.wakeWord.keyword, '小美');
+    expect(capabilities.wakeWord.preRollMs, 1200);
+    expect(capabilities.clientVad.rmsDbfs, -42);
+    expect(capabilities.clientVad.speechFrames, 3);
+    expect(capabilities.audioMetricsSeconds, 5);
   });
 
   test('falls back to legacy voice ids and the first valid default', () {
@@ -39,6 +59,7 @@ void main() {
     expect(capabilities.voiceOptions, hasLength(2));
     expect(capabilities.voiceOptions.first.name, 'Cherry');
     expect(capabilities.voiceOptions.first.description, isEmpty);
+    expect(capabilities.wakeWord.enabled, isFalse);
   });
 
   test('uses structured options when a future backend omits legacy ids', () {
