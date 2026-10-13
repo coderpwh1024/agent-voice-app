@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_models.dart';
 import '../../core/audio/audio_bridge.dart';
-import '../conversations/history_sheet.dart';
+import '../conversations/chat_records_page.dart';
 import '../profile/profile_avatar.dart';
 import 'voice_session_controller.dart';
 
@@ -35,6 +35,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
   String? _threadId;
   bool _enablingDefaultWake = false;
   bool _defaultWakeAttempted = false;
+  bool _browsingHistory = false;
 
   @override
   void initState() {
@@ -152,7 +153,8 @@ class _VoiceHomePageState extends State<VoiceHomePage>
     final agent = _selectedAgent;
     final voice = _selectedVoice;
     final capabilities = controller.capabilities;
-    if (_enablingDefaultWake ||
+    if (_browsingHistory ||
+        _enablingDefaultWake ||
         _defaultWakeAttempted ||
         controller.isConnected ||
         controller.wakeWordEnabled ||
@@ -223,27 +225,33 @@ class _VoiceHomePageState extends State<VoiceHomePage>
   }
 
   Future<void> _openHistory() async {
-    final agent = _selectedAgent;
-    if (agent == null || widget.controller.isConnected) {
+    if (_browsingHistory || widget.controller.isConnected) {
       return;
     }
+    _browsingHistory = true;
     try {
-      final threads = await widget.controller.threads(agent.id);
-      if (!mounted) {
-        return;
-      }
-      await showModalBottomSheet<void>(
-        context: context,
-        showDragHandle: false,
-        builder: (_) => HistorySheet(
-          threads: threads,
-          onSelected: (thread) => _selectThread(thread),
+      await widget.controller.disableWakeWord();
+      if (!mounted) return;
+      final thread = await Navigator.of(context).push<ThreadSummary>(
+        MaterialPageRoute(
+          builder: (_) => ChatRecordsPage(
+            config: widget.controller.config,
+            agents: widget.controller.capabilities?.agents ?? const [],
+            initialAgentId: _selectedAgent?.id ?? _agentId ?? 'chatbot',
+          ),
         ),
       );
+      if (mounted && thread != null) await _selectThread(thread);
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    } finally {
+      _browsingHistory = false;
+      if (mounted) {
+        _defaultWakeAttempted = false;
+        _scheduleDefaultWake();
       }
     }
   }
@@ -311,7 +319,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
         ),
         actions: [
           IconButton(
-            tooltip: '历史会话',
+            tooltip: '聊天记录',
             onPressed: connected ? null : _openHistory,
             icon: const Icon(Icons.history_rounded),
             style: IconButton.styleFrom(

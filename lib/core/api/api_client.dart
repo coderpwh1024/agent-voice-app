@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import '../config/app_config.dart';
 import 'api_models.dart';
+import 'chat_record_models.dart';
 
 class ApiException implements Exception {
   const ApiException(this.statusCode, this.message);
@@ -189,6 +190,42 @@ class AgentApiClient {
     return (json['messages'] as List<dynamic>? ?? const [])
         .map((item) => ChatItem.fromJson(item as Map<String, dynamic>))
         .toList(growable: false);
+  }
+
+  Future<List<ChatRecordDay>> chatRecords(String agentId) async {
+    final json = await _request(
+      'GET',
+      '/${Uri.encodeComponent(agentId)}/chat-records',
+      query: _chatRecordQuery(),
+    );
+    final records = (json['records'] as List<dynamic>? ?? const [])
+        .map((item) => ChatRecordDay.fromJson(item as Map<String, dynamic>))
+        .toList();
+    records.sort((a, b) => b.latestAt.compareTo(a.latestAt));
+    return records;
+  }
+
+  Future<ChatRecordDetail> chatRecordDetail(
+    String agentId,
+    String recordDate,
+  ) async {
+    if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(recordDate)) {
+      throw const ApiException(0, '请选择有效的聊天记录日期');
+    }
+    final json = await _request(
+      'GET',
+      '/${Uri.encodeComponent(agentId)}/chat-records/$recordDate',
+      query: _chatRecordQuery(),
+    );
+    return ChatRecordDetail.fromJson(json);
+  }
+
+  Map<String, String> _chatRecordQuery() {
+    final userId = config.userId.trim();
+    if (userId.isEmpty) {
+      throw const ApiException(0, '请先登录后查看聊天记录');
+    }
+    return <String, String>{'user_id': userId};
   }
 
   Uri websocketUri(String sessionId) {

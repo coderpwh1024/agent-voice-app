@@ -263,17 +263,28 @@ class VoiceSession {
 }
 
 class ChatItem {
-  const ChatItem({required this.role, required this.content, this.runId});
+  const ChatItem({
+    required this.role,
+    required this.content,
+    this.runId,
+    this.toolNames = const [],
+  });
 
   factory ChatItem.fromJson(Map<String, dynamic> json) => ChatItem(
     role: json['type'] as String? ?? 'custom',
     content: json['content'] as String? ?? '',
     runId: json['run_id'] as String?,
+    toolNames: (json['tool_calls'] as List<dynamic>? ?? const [])
+        .whereType<Map>()
+        .map((item) => item['name']?.toString() ?? '')
+        .where((name) => name.isNotEmpty)
+        .toList(growable: false),
   );
 
   final String role;
   final String content;
   final String? runId;
+  final List<String> toolNames;
 }
 
 class ThreadSummary {

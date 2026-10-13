@@ -204,6 +204,138 @@ void main() {
     api.close();
   });
 
+  test(
+    'daily records use authenticated GET routes and preserve UTC dates',
+    () async {
+      server.listen((request) async {
+        requests.add(request);
+        expect(request.method, 'GET');
+        expect(request.uri.queryParameters, {'user_id': '42'});
+        expect(
+          request.headers.value(HttpHeaders.authorizationHeader),
+          'Bearer access-token',
+        );
+        request.response.headers.contentType = ContentType.json;
+        final detail = request.uri.path.endsWith('/2026-10-13');
+        request.response.write(
+          jsonEncode({
+            'code': 200,
+            'message': 'success',
+            'data': detail
+                ? {
+                    'record_date': '2026-10-13',
+                    'conversations': [
+                      {
+                        'thread_id': 'thread-1',
+                        'agent_id': 'chatbot',
+                        'title': '今天的计划',
+                        'updated_at': '2026-10-13T23:59:00Z',
+                        'messages': [
+                          {'type': 'human', 'content': '今天的计划'},
+                          {
+                            'type': 'ai',
+                            'content': '',
+                            'tool_calls': [
+                              {'name': 'calendar'},
+                            ],
+                          },
+                          {'type': 'tool', 'content': '查询完成'},
+                          {'type': 'ai', 'content': '先完成最重要的一件事。'},
+                        ],
+                      },
+                    ],
+                  }
+                : {
+                    'records': [
+                      {
+                        'record_date': '2026-10-12',
+                        'latest_at': '2026-10-12T22:00:00Z',
+                        'conversation_count': 1,
+                      },
+                      {
+                        'record_date': '2026-10-13',
+                        'latest_at': '2026-10-13T23:59:00Z',
+                        'conversation_count': 2,
+                      },
+                    ],
+                  },
+          }),
+        );
+        await request.response.close();
+      });
+      final api = client();
+      final records = await api.chatRecords('chatbot');
+      expect(records.map((record) => record.recordDate), [
+        '2026-10-13',
+        '2026-10-12',
+      ]);
+      expect(records.first.date.isUtc, isTrue);
+      expect(records.first.conversationCount, 2);
+      final detail = await api.chatRecordDetail(
+        'chatbot',
+        records.first.recordDate,
+      );
+      expect(requests.map((request) => request.uri.path), [
+        '/chatbot/chat-records',
+        '/chatbot/chat-records/2026-10-13',
+      ]);
+      expect(detail.messageCount, 4);
+      expect(detail.conversations.single.messages[1].toolNames, ['calendar']);
+      expect(detail.conversations.single.thread.threadId, 'thread-1');
+      expect(detail.conversations.single.updatedAt.isUtc, isTrue);
+      api.close();
+    },
+  );
+
+  test(
+    'daily records reject a missing user and surface forbidden responses',
+    () async {
+      final anonymous = AgentApiClient(
+        AppConfig(
+          baseUrl: 'http://${server.address.host}:${server.port}',
+          accessToken: 'token',
+          userId: '',
+        ),
+      );
+      await expectLater(
+        anonymous.chatRecords('chatbot'),
+        throwsA(
+          isA<ApiException>().having((error) => error.statusCode, 'status', 0),
+        ),
+      );
+      anonymous.close();
+      server.listen((request) async {
+        request.response.statusCode = 403;
+        request.response.write(
+          jsonEncode({
+            'code': 403,
+            'message': 'user_id does not match the authenticated user',
+            'data': null,
+          }),
+        );
+        await request.response.close();
+      });
+      final api = client();
+      await expectLater(
+        api.chatRecords('chatbot'),
+        throwsA(
+          isA<ApiException>().having(
+            (error) => error.statusCode,
+            'status',
+            403,
+          ),
+        ),
+      );
+      await expectLater(
+        api.chatRecordDetail('chatbot', '../history'),
+        throwsA(
+          isA<ApiException>().having((error) => error.statusCode, 'status', 0),
+        ),
+      );
+      api.close();
+    },
+  );
+
   test('surfaces backend detail for a failed verification', () async {
     server.listen((request) async {
       request.response.statusCode = HttpStatus.unauthorized;

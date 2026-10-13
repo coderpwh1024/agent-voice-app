@@ -17,6 +17,7 @@
 - 原生端确认已播放的 segment/response，再上报播放进度
 - LangGraph `approval.required` 的同意/拒绝入口
 - 用户线程列表与历史记录恢复
+- 最近 30 天聊天记录：按 UTC 日期归档、切换助手查询、分会话查看当天消息，以及继续历史对话
 - Android `VOICE_COMMUNICATION`、`AcousticEchoCanceler`、`NoiseSuppressor`
 - iOS `AVAudioSession.voiceChat`、Voice Processing 与系统音频转换
 - sherpa-onnx 离线中文唤醒词“小美”，带 1.2 秒前滚音频
@@ -90,6 +91,14 @@ BACKEND_PORT=8080 ./scripts/install_usb_debug.sh 20b2a515
 - 生产环境必须使用 HTTPS/WSS
 
 Android Manifest 当前允许明文 HTTP，仅用于本地开发。发布前应关闭 `android:usesCleartextTraffic`，并配置可信 HTTPS/WSS 域名。登录 Token 不写入普通偏好存储：iOS 使用 Keychain，Android 使用 Keystore 内的 AES-GCM 密钥加密后再持久化。退出登录会删除本地会话。
+
+## 聊天记录
+
+登录后点击首页右上角的“聊天记录”入口，查看当前助手最近 30 天有聊天活动的日期。列表支持切换助手和下拉刷新；点击日期进入详情，按会话展示当天新增的消息，工具结果可以展开查看。点击“继续这段对话”会返回首页并恢复对应会话的完整历史，随后可继续语音聊天。
+
+列表接入 `GET /{agent_id}/chat-records?user_id=...`，详情接入 `GET /{agent_id}/chat-records/{YYYY-MM-DD}?user_id=...`。两个接口都携带当前登录用户的 Bearer Token 和 user ID，保留后端的账号隔离。日期和显示时间统一遵循后端 UTC 归档口径，详情不包含其他日期的旧消息。服务器返回登录过期、权限不足、日期超期或网络错误时，页面提供对应提示和重试入口。
+
+页面适配系统深色模式、底部安全区域及放大字体，宽屏内容限制在 760 像素以内。读取聊天记录时暂停离线唤醒，退出记录页面后恢复，避免浏览记录时触发语音会话。
 
 ## 工程结构
 
