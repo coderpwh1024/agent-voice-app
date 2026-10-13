@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/api/api_models.dart';
 
 String recordDateLabel(String recordDate, {DateTime? now}) {
   final date = DateTime.parse('${recordDate}T00:00:00Z');
@@ -21,6 +22,7 @@ String recordTime(DateTime date) {
 }
 
 String recordAgentName(String agentId) => switch (agentId) {
+  'mem0-chatbot' => 'Mem0 · 小美',
   'chatbot' => '小美',
   'research-assistant' => '研究助手',
   'rag-assistant' => '知识助手',
@@ -28,6 +30,40 @@ String recordAgentName(String agentId) => switch (agentId) {
   'github-mcp-agent' => 'GitHub 助手',
   _ => agentId,
 };
+
+class MemoryStatusNote extends StatelessWidget {
+  const MemoryStatusNote({super.key, required this.status});
+
+  final MemoryStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = RecordPalette(context);
+    final color = status.hasWarning ? palette.accent : palette.muted;
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            status.hasWarning
+                ? Icons.info_outline_rounded
+                : Icons.psychology_outlined,
+            size: 14,
+            color: color,
+          ),
+          const SizedBox(width: 5),
+          Expanded(
+            child: Text(
+              status.label,
+              style: TextStyle(color: color, fontSize: 11, height: 1.5),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 String recordErrorMessage(Object error) {
   if (error is ApiException) {

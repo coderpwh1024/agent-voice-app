@@ -2,6 +2,79 @@ import 'package:agent_voice_app/core/api/api_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('honors backend defaults and never remaps an existing thread', () {
+    final capabilities = VoiceCapabilities.fromJson({
+      'default_agent': 'mem0-chatbot',
+      'agents': [
+        {'id': 'chatbot'},
+        {'id': 'mem0-chatbot'},
+      ],
+    });
+    expect(capabilities.defaultAgentId, 'mem0-chatbot');
+    expect(capabilities.selectAgent(null)?.id, 'mem0-chatbot');
+    expect(
+      capabilities.selectAgent('chatbot', hasExistingThread: true)?.id,
+      'chatbot',
+    );
+    expect(
+      capabilities.selectAgent('removed-agent', hasExistingThread: true),
+      isNull,
+    );
+    expect(capabilities.selectAgent('removed-agent')?.id, 'mem0-chatbot');
+  });
+
+  test('legacy and unavailable defaults fall back to an advertised agent', () {
+    for (final advertised in [null, 'removed-agent']) {
+      final capabilities = VoiceCapabilities.fromJson({
+        'default_agent': advertised,
+        'agents': [
+          {'id': 'research-assistant'},
+          {'id': 'chatbot'},
+        ],
+      });
+      expect(capabilities.defaultAgentId, 'chatbot');
+    }
+    expect(
+      VoiceCapabilities.fromJson({
+        'agents': [
+          {'id': 'research-assistant'},
+        ],
+      }).defaultAgentId,
+      'research-assistant',
+    );
+    expect(VoiceCapabilities.fromJson({}).defaultAgentId, isNull);
+  });
+
+  test(
+    'parses each memory status without interpreting SDK output as saved facts',
+    () {
+      for (final entry in {
+        'disabled': MemoryStatus.disabled,
+        'saved': MemoryStatus.saved,
+        'saved_search_failed': MemoryStatus.savedSearchFailed,
+        'write_failed': MemoryStatus.writeFailed,
+      }.entries) {
+        final item = ChatItem.fromJson({
+          'type': 'ai',
+          'content': '回答',
+          'response_metadata': {'memory_status': entry.key},
+        });
+        expect(item.memoryStatus, entry.value);
+        expect(item.content, '回答');
+      }
+      expect(
+        ChatItem.fromJson({
+          'type': 'ai',
+          'response_metadata': {'memory_status': 'future-status'},
+        }).memoryStatus,
+        isNull,
+      );
+      expect(ChatItem.fromJson({'type': 'ai'}).memoryStatus, isNull);
+      expect(MemoryStatus.saved.label, '记忆处理完成');
+      expect(MemoryStatus.writeFailed.hasWarning, isTrue);
+    },
+  );
+
   test('parses structured voice metadata and configured default', () {
     final capabilities = VoiceCapabilities.fromJson(<String, dynamic>{
       'enabled': true,

@@ -27,16 +27,19 @@ class ConversationEntry {
     required this.role,
     required this.text,
     this.responseId,
+    this.memoryStatus,
   });
 
   final String role;
   final String text;
   final String? responseId;
+  final MemoryStatus? memoryStatus;
 
   ConversationEntry copyWith({String? text}) => ConversationEntry(
     role: role,
     text: text ?? this.text,
     responseId: responseId,
+    memoryStatus: memoryStatus,
   );
 }
 
@@ -421,13 +424,31 @@ class VoiceSessionController extends ChangeNotifier {
 
   Future<List<ThreadSummary>> threads(String agentId) => _api.threads(agentId);
 
+  void clearConversation() {
+    if (isConnected) {
+      throw StateError('请先结束当前语音会话');
+    }
+    _messages.clear();
+    _assistantIndexes.clear();
+    _invalidResponses.clear();
+    _partialTranscript = '';
+    _approval = null;
+    _session = null;
+    _error = null;
+    notifyListeners();
+  }
+
   Future<void> loadHistory(String agentId, String threadId) async {
     final history = await _api.history(agentId, threadId);
     _messages
       ..clear()
       ..addAll(
         history.map(
-          (item) => ConversationEntry(role: item.role, text: item.content),
+          (item) => ConversationEntry(
+            role: item.role,
+            text: item.content,
+            memoryStatus: item.memoryStatus,
+          ),
         ),
       );
     notifyListeners();

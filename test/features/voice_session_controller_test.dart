@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:agent_voice_app/core/audio/audio_bridge.dart';
 import 'package:agent_voice_app/core/audio/wake_word_detector.dart';
 import 'package:agent_voice_app/core/api/voice_protocol.dart';
+import 'package:agent_voice_app/core/api/api_models.dart';
 import 'package:agent_voice_app/core/config/app_config.dart';
 import 'package:agent_voice_app/features/voice_session/voice_session_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -141,6 +142,58 @@ Future<void> waitUntil(bool Function() predicate) async {
 }
 
 void main() {
+  test('restoring history preserves the backend memory result', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    server.listen((request) async {
+      expect(request.uri.path, '/mem0-chatbot/history');
+      expect(
+        request.headers.value(HttpHeaders.authorizationHeader),
+        'Bearer test-token',
+      );
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(
+        jsonEncode({
+          'code': 200,
+          'data': {
+            'messages': [
+              {'type': 'human', 'content': '记住我的偏好'},
+              {
+                'type': 'ai',
+                'content': '已完成本轮回答',
+                'response_metadata': {'memory_status': 'write_failed'},
+              },
+            ],
+          },
+        }),
+      );
+      await request.response.close();
+    });
+    final audio = FakeAudioBridge();
+    final controller = VoiceSessionController(
+      config: AppConfig(
+        baseUrl: 'http://${server.address.host}:${server.port}',
+        accessToken: 'test-token',
+        userId: '42',
+      ),
+      audio: audio,
+    );
+    try {
+      await controller.loadHistory('mem0-chatbot', 'mem0-thread');
+      expect(controller.messages.first.memoryStatus, isNull);
+      expect(controller.messages.last.memoryStatus, MemoryStatus.writeFailed);
+      expect(
+        controller.messages.last.copyWith(text: '新文本').memoryStatus,
+        MemoryStatus.writeFailed,
+      );
+      controller.clearConversation();
+      expect(controller.messages, isEmpty);
+    } finally {
+      controller.dispose();
+      await audio.close();
+      await server.close(force: true);
+    }
+  });
+
   test('waits for native playback before returning to listening', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final clientEvents = <Map<String, dynamic>>[];

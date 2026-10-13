@@ -16,21 +16,29 @@ Future<void> main() async {
   final otherUser = AgentApiClient(
     config.copyWith(userId: '${config.userId}-other'),
   );
+  final agentId = input['agent_id'] as String? ?? 'chatbot';
   try {
-    final records = await api.chatRecords('chatbot');
+    final records = await api.chatRecords(agentId);
     if (records.length != 1 || records.single.conversationCount != 1) {
       throw StateError(
         'The isolated fixture should have one day and one conversation',
       );
     }
     final detail = await api.chatRecordDetail(
-      'chatbot',
+      agentId,
       records.single.recordDate,
     );
     if (detail.conversations.length != 1 || detail.messageCount != 2) {
       throw StateError('The isolated daily detail should contain two messages');
     }
     final conversation = detail.conversations.single;
+    final expectedStatus = input['expected_memory_status'];
+    if (expectedStatus != null &&
+        conversation.messages.last.memoryStatus?.name != expectedStatus) {
+      throw StateError(
+        'The memory status was not preserved in the daily detail',
+      );
+    }
     if (conversation.threadId != input['thread_id'] ||
         conversation.messages.first.role != 'human' ||
         conversation.messages.last.role != 'ai' ||
@@ -39,7 +47,7 @@ Future<void> main() async {
     }
     var isolated = false;
     try {
-      await otherUser.chatRecords('chatbot');
+      await otherUser.chatRecords(agentId);
     } on ApiException catch (error) {
       isolated = error.statusCode == 403;
     }

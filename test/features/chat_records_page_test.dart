@@ -47,6 +47,7 @@ final detail = ChatRecordDetail(
         ChatItem(
           role: 'ai',
           content: '当然。先为最重要的事留出一小时，再给自己安排一次散步。\n今天，也记得慢一点。',
+          memoryStatus: MemoryStatus.savedSearchFailed,
         ),
         ChatItem(role: 'tool', content: '工具查询结果'),
       ],
@@ -101,6 +102,11 @@ Widget app(
 );
 
 Future<void> scrollTo(WidgetTester tester, Finder finder) async {
+  if (finder.evaluate().isNotEmpty) {
+    await tester.ensureVisible(finder);
+    await tester.pumpAndSettle();
+    return;
+  }
   await tester.scrollUntilVisible(
     finder,
     180,
@@ -156,6 +162,8 @@ void main() {
     await tester.tap(find.text('1 段对话 · 最近 09:40'));
     await tester.pumpAndSettle();
     expect(find.text('聊天详情'), findsOneWidget);
+    await scrollTo(tester, find.text('记忆处理完成，本轮回忆暂不可用'));
+    expect(find.text('记忆处理完成，本轮回忆暂不可用'), findsOneWidget);
     await scrollTo(tester, find.text('工具记录'));
     await tester.tap(find.text('工具记录'));
     await tester.pumpAndSettle();

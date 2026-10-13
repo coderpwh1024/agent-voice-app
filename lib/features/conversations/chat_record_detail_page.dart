@@ -282,6 +282,8 @@ class _MessageBubble extends StatelessWidget {
                 content,
                 style: TextStyle(color: palette.ink, fontSize: 13, height: 1.6),
               ),
+              if (!human && message.memoryStatus != null)
+                MemoryStatusNote(status: message.memoryStatus!),
             ],
           ),
         ),
@@ -322,6 +324,8 @@ class _MessageBubble extends StatelessWidget {
                 content,
                 style: TextStyle(color: palette.ink, fontSize: 15, height: 1.7),
               ),
+              if (!human && message.memoryStatus != null)
+                MemoryStatusNote(status: message.memoryStatus!),
               if (message.content.trim().isNotEmpty &&
                   message.toolNames.isNotEmpty) ...[
                 const SizedBox(height: 8),

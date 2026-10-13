@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/api/api_models.dart';
 import '../../core/audio/audio_bridge.dart';
 import '../conversations/chat_records_page.dart';
+import '../conversations/chat_record_widgets.dart';
 import '../profile/profile_avatar.dart';
 import 'voice_session_controller.dart';
 
@@ -75,6 +76,12 @@ class _VoiceHomePageState extends State<VoiceHomePage>
     if (!mounted) {
       return;
     }
+    final session = widget.controller.session;
+    if (session != null &&
+        (_threadId == null || _threadId == session.threadId)) {
+      _agentId = session.agentId;
+      _threadId = session.threadId;
+    }
     setState(() {});
     _scheduleDefaultWake();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -89,15 +96,10 @@ class _VoiceHomePageState extends State<VoiceHomePage>
   }
 
   AgentCapability? get _selectedAgent {
-    final agents =
-        widget.controller.capabilities?.agents ?? const <AgentCapability>[];
-    if (agents.isEmpty) {
-      return null;
-    }
-    final id = _agentId;
-    return agents.where((agent) => agent.id == id).firstOrNull ??
-        agents.where((agent) => agent.id == 'chatbot').firstOrNull ??
-        agents.first;
+    return widget.controller.capabilities?.selectAgent(
+      _agentId,
+      hasExistingThread: _threadId != null,
+    );
   }
 
   String? get _selectedVoice {
@@ -194,6 +196,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
       _threadId = null;
       _defaultWakeAttempted = false;
     });
+    widget.controller.clearConversation();
     _scheduleDefaultWake();
   }
 
@@ -237,7 +240,11 @@ class _VoiceHomePageState extends State<VoiceHomePage>
           builder: (_) => ChatRecordsPage(
             config: widget.controller.config,
             agents: widget.controller.capabilities?.agents ?? const [],
-            initialAgentId: _selectedAgent?.id ?? _agentId ?? 'chatbot',
+            initialAgentId:
+                _selectedAgent?.id ??
+                _agentId ??
+                widget.controller.capabilities?.defaultAgentId ??
+                'chatbot',
           ),
         ),
       );
@@ -283,6 +290,9 @@ class _VoiceHomePageState extends State<VoiceHomePage>
   }
 
   void _sendText() {
+    if (!widget.controller.isConnected || _text.text.trim().isEmpty) {
+      return;
+    }
     final value = _text.text;
     _text.clear();
     widget.controller.sendText(value);
@@ -676,62 +686,65 @@ class _ConnectionPanel extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 13),
-              Row(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    flex: 4,
-                    child: DropdownButtonFormField<String>(
-                      isExpanded: true,
-                      initialValue: selectedAgent?.id,
-                      decoration: const InputDecoration(
-                        labelText: '助手',
-                        prefixIcon: Icon(Icons.auto_awesome_rounded, size: 19),
-                        isDense: true,
-                      ),
-                      items: capabilities?.agents
-                          .map(
-                            (agent) => DropdownMenuItem(
-                              value: agent.id,
-                              child: Text(
-                                agent.id,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: connected ? null : onAgentChanged,
+                  DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    initialValue: selectedAgent?.id,
+                    decoration: const InputDecoration(
+                      labelText: '助手',
+                      prefixIcon: Icon(Icons.auto_awesome_rounded, size: 19),
+                      isDense: true,
                     ),
+                    items: capabilities?.agents
+                        .map(
+                          (agent) => DropdownMenuItem(
+                            value: agent.id,
+                            child: Text(
+                              recordAgentName(agent.id),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: connected ? null : onAgentChanged,
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    flex: 6,
-                    child: DropdownButtonFormField<String>(
-                      isExpanded: true,
-                      initialValue: selectedVoice,
-                      decoration: const InputDecoration(
-                        labelText: '音色',
-                        prefixIcon: Icon(
-                          Icons.spatial_audio_off_rounded,
-                          size: 19,
-                        ),
-                        isDense: true,
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    initialValue: selectedVoice,
+                    decoration: const InputDecoration(
+                      labelText: '音色',
+                      prefixIcon: Icon(
+                        Icons.spatial_audio_off_rounded,
+                        size: 19,
                       ),
-                      items: capabilities?.voiceOptions
-                          .map(
-                            (voice) => DropdownMenuItem<String>(
-                              value: voice.id,
-                              child: Text(
-                                voice.displayName,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: connected ? null : onVoiceChanged,
+                      isDense: true,
                     ),
+                    items: capabilities?.voiceOptions
+                        .map(
+                          (voice) => DropdownMenuItem<String>(
+                            value: voice.id,
+                            child: Text(
+                              voice.displayName,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: connected ? null : onVoiceChanged,
                   ),
                 ],
               ),
+              if (selectedAgent?.id == 'mem0-chatbot') ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Mem0 记忆状态可在聊天记录中查看',
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ],
               if (selectedVoiceOption != null) ...[
                 const SizedBox(height: 8),
                 Align(
@@ -1075,7 +1088,15 @@ class _MessageBubble extends StatelessWidget {
             bottomRight: Radius.circular(human ? 4 : 18),
           ),
         ),
-        child: Text(entry.text.isEmpty ? '…' : entry.text),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(entry.text.isEmpty ? '…' : entry.text),
+            if (!human && entry.memoryStatus != null)
+              MemoryStatusNote(status: entry.memoryStatus!),
+          ],
+        ),
       ),
     );
   }
@@ -1169,11 +1190,10 @@ class _Composer extends StatelessWidget {
               Expanded(
                 child: TextField(
                   controller: controller,
-                  enabled: enabled,
                   minLines: 1,
                   maxLines: 4,
                   textInputAction: TextInputAction.send,
-                  onSubmitted: (_) => onSend(),
+                  onSubmitted: enabled ? (_) => onSend() : null,
                   decoration: const InputDecoration(
                     hintText: '也可以写下想说的话…',
                     border: InputBorder.none,

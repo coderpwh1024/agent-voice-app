@@ -120,6 +120,7 @@ class VoiceCapabilities {
     required this.wakeWord,
     required this.clientVad,
     required this.audioMetricsSeconds,
+    this.defaultAgent,
   });
 
   factory VoiceCapabilities.fromJson(Map<String, dynamic> json) {
@@ -166,6 +167,7 @@ class VoiceCapabilities {
         Map<String, dynamic>.from(json['client_vad'] as Map? ?? const {}),
       ),
       audioMetricsSeconds: json['audio_metrics_seconds'] as int? ?? 5,
+      defaultAgent: json['default_agent'] as String?,
     );
   }
 
@@ -177,6 +179,24 @@ class VoiceCapabilities {
   final WakeWordCapability wakeWord;
   final ClientVadCapability clientVad;
   final int audioMetricsSeconds;
+  final String? defaultAgent;
+
+  String? get defaultAgentId {
+    if (agents.any((agent) => agent.id == defaultAgent)) return defaultAgent;
+    if (agents.any((agent) => agent.id == 'chatbot')) return 'chatbot';
+    return agents.firstOrNull?.id;
+  }
+
+  AgentCapability? selectAgent(
+    String? selectedId, {
+    bool hasExistingThread = false,
+  }) {
+    final selected = agents
+        .where((agent) => agent.id == selectedId)
+        .firstOrNull;
+    if (selected != null || hasExistingThread) return selected;
+    return agents.where((agent) => agent.id == defaultAgentId).firstOrNull;
+  }
 
   List<String> get voices =>
       voiceOptions.map((option) => option.id).toList(growable: false);
@@ -262,12 +282,37 @@ class VoiceSession {
   final String wakeStatus;
 }
 
+enum MemoryStatus {
+  disabled,
+  saved,
+  savedSearchFailed,
+  writeFailed;
+
+  static MemoryStatus? fromJson(Object? value) => switch (value) {
+    'disabled' => disabled,
+    'saved' => saved,
+    'saved_search_failed' => savedSearchFailed,
+    'write_failed' => writeFailed,
+    _ => null,
+  };
+
+  String get label => switch (this) {
+    disabled => '长期记忆未启用',
+    saved => '记忆处理完成',
+    savedSearchFailed => '记忆处理完成，本轮回忆暂不可用',
+    writeFailed => '本轮记忆未保存',
+  };
+
+  bool get hasWarning => this == savedSearchFailed || this == writeFailed;
+}
+
 class ChatItem {
   const ChatItem({
     required this.role,
     required this.content,
     this.runId,
     this.toolNames = const [],
+    this.memoryStatus,
   });
 
   factory ChatItem.fromJson(Map<String, dynamic> json) => ChatItem(
@@ -279,12 +324,18 @@ class ChatItem {
         .map((item) => item['name']?.toString() ?? '')
         .where((name) => name.isNotEmpty)
         .toList(growable: false),
+    memoryStatus: MemoryStatus.fromJson(
+      json['response_metadata'] is Map
+          ? (json['response_metadata'] as Map)['memory_status']
+          : null,
+    ),
   );
 
   final String role;
   final String content;
   final String? runId;
   final List<String> toolNames;
+  final MemoryStatus? memoryStatus;
 }
 
 class ThreadSummary {

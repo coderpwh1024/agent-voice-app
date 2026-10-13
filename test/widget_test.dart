@@ -27,6 +27,26 @@ class AuthenticatedSessionStore extends AuthSessionStore {
 }
 
 void main() {
+  testWidgets('opens the keyboard for a draft before voice connects', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const AgentVoiceApp(sessionStore: AuthenticatedSessionStore()),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final composer = find.widgetWithText(TextField, '也可以写下想说的话…');
+    await tester.tap(composer);
+    await tester.pump();
+    expect(tester.testTextInput.isVisible, isTrue);
+    await tester.enterText(composer, '未发送的草稿');
+    await tester.testTextInput.receiveAction(TextInputAction.send);
+    await tester.pump();
+    expect(find.text('未发送的草稿'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('renders the email login and registration entry', (tester) async {
     await tester.pumpWidget(
       const AgentVoiceApp(sessionStore: EmptySessionStore()),
