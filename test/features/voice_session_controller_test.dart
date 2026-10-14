@@ -271,13 +271,26 @@ void main() {
         'text': '完整回答',
       }),
     );
-    await waitUntil(() => controller.state == VoiceConnectionState.speaking);
+    await waitUntil(
+      () =>
+          controller.messages.isNotEmpty &&
+          controller.messages.last.text == '完整回答',
+    );
+    expect(controller.state, VoiceConnectionState.thinking);
     socket!.add(jsonEncode(<String, Object?>{'type': 'input.started'}));
     socket!.add(
       jsonEncode(<String, Object?>{'type': 'transcript.final', 'text': ''}),
     );
     await Future<void>.delayed(const Duration(milliseconds: 50));
-    expect(controller.state, VoiceConnectionState.speaking);
+    expect(controller.state, VoiceConnectionState.thinking);
+    socket!.add(
+      jsonEncode(<String, Object?>{
+        'type': 'playback.resume',
+        'response_id': responseId,
+      }),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(controller.state, VoiceConnectionState.thinking);
     socket!.add(
       outputAudioFrame(connectionId: connectionId, responseId: responseId),
     );
@@ -297,10 +310,15 @@ void main() {
         'execution_status': 'completed',
         'audio_status': 'completed',
         'error_code': null,
+        'latency_ms': <String, int>{'text_to_audio_ms': 30},
       }),
     );
 
     await waitUntil(() => audio.completedResponses.contains(responseId));
+    expect(controller.responseLatencyMs['first_text_ms'], isNonNegative);
+    expect(controller.responseLatencyMs['text_to_audio_ms'], isNonNegative);
+    expect(controller.responseLatencyMs['native_enqueue_ms'], isNonNegative);
+    expect(controller.responseLatencyMs['server_text_to_audio_ms'], 30);
     expect(audio.operations, <String>['audio', 'segment', 'response']);
     expect(controller.state, VoiceConnectionState.speaking);
     expect(controller.currentResponseId, responseId);

@@ -75,6 +75,9 @@ class VoiceSessionController extends ChangeNotifier {
   int _inputSequence = 0;
   String? _connectionId;
   String? _currentResponseId;
+  bool _responseHasAudio = false;
+  final Stopwatch _responseClock = Stopwatch();
+  final Map<String, int> _responseLatencyMs = <String, int>{};
   String _partialTranscript = '';
   String? _error;
   VoiceConnectionState _state = VoiceConnectionState.disconnected;
@@ -108,6 +111,8 @@ class VoiceSessionController extends ChangeNotifier {
   String get partialTranscript => _partialTranscript;
   String? get error => _error;
   String? get currentResponseId => _currentResponseId;
+  Map<String, int> get responseLatencyMs =>
+      Map.unmodifiable(_responseLatencyMs);
   List<ConversationEntry> get messages => List.unmodifiable(_messages);
   ApprovalPrompt? get approval => _approval;
   bool get isConnected => _connectionId != null && _socket != null;
@@ -492,13 +497,20 @@ class VoiceSessionController extends ChangeNotifier {
           _setState(
             _currentResponseId == null
                 ? VoiceConnectionState.listening
-                : VoiceConnectionState.speaking,
+                : _responseHasAudio
+                ? VoiceConnectionState.speaking
+                : VoiceConnectionState.thinking,
           );
         } else {
           _setState(VoiceConnectionState.thinking);
         }
       case 'response.started':
         _currentResponseId = responseId;
+        _responseHasAudio = false;
+        _responseLatencyMs.clear();
+        _responseClock
+          ..reset()
+          ..start();
         if (responseId != null) {
           _assistantIndexes[responseId] = _messages.length;
           _messages.add(
@@ -507,6 +519,10 @@ class VoiceSessionController extends ChangeNotifier {
         }
         _setState(VoiceConnectionState.thinking);
       case 'text.delta':
+        _responseLatencyMs.putIfAbsent(
+          'first_text_ms',
+          () => _responseClock.elapsedMilliseconds,
+        );
         if (responseId != null) {
           final index = _assistantIndexes[responseId];
           if (index != null && index < _messages.length) {
@@ -515,7 +531,11 @@ class VoiceSessionController extends ChangeNotifier {
             );
           }
         }
-        _setState(VoiceConnectionState.speaking);
+        _setState(
+          _responseHasAudio
+              ? VoiceConnectionState.speaking
+              : VoiceConnectionState.thinking,
+        );
       case 'audio.segment.done':
         if (responseId != null) {
           await _audio.completeSegment(
@@ -536,6 +556,15 @@ class VoiceSessionController extends ChangeNotifier {
         _speechFrames = 0;
         _setState(VoiceConnectionState.listening);
       case 'response.done':
+        final serverLatency = event['latency_ms'];
+        if (serverLatency is Map) {
+          for (final entry in serverLatency.entries) {
+            if (entry.key is String && entry.value is num) {
+              _responseLatencyMs['server_${entry.key}'] = (entry.value as num)
+                  .toInt();
+            }
+          }
+        }
         final shouldDrain =
             responseId != null &&
             !_invalidResponses.contains(responseId) &&
@@ -553,7 +582,11 @@ class VoiceSessionController extends ChangeNotifier {
           _speechHintPending = false;
           _speechFrames = 0;
           await _audio.resume();
-          _setState(VoiceConnectionState.speaking);
+          _setState(
+            _responseHasAudio
+                ? VoiceConnectionState.speaking
+                : VoiceConnectionState.thinking,
+          );
         }
       case 'wake.accepted':
         final transcript = _pendingWakeTranscript;
@@ -597,11 +630,27 @@ class VoiceSessionController extends ChangeNotifier {
           _invalidResponses.contains(frame.responseId)) {
         return;
       }
+      final receivedMs = _responseClock.elapsedMilliseconds;
       await _audio.enqueue(
         frame.pcm,
         responseId: frame.responseId,
         segmentIndex: frame.segmentIndex,
       );
+      if (!_responseHasAudio && frame.responseId == _currentResponseId) {
+        _responseHasAudio = true;
+        _responseLatencyMs['first_audio_received_ms'] = receivedMs;
+        _responseLatencyMs['native_enqueue_ms'] =
+            _responseClock.elapsedMilliseconds - receivedMs;
+        final firstTextMs = _responseLatencyMs['first_text_ms'];
+        if (firstTextMs != null) {
+          _responseLatencyMs['text_to_audio_ms'] = receivedMs - firstTextMs;
+        }
+        if (kDebugMode) {
+          debugPrint(
+            'Voice latency response_id=${frame.responseId} latency_ms=$_responseLatencyMs',
+          );
+        }
+      }
       _setState(VoiceConnectionState.speaking);
     } catch (error) {
       _recordError(error);
@@ -749,6 +798,8 @@ class VoiceSessionController extends ChangeNotifier {
       _socket = null;
       _connectionId = null;
       _currentResponseId = null;
+      _responseHasAudio = false;
+      _responseClock.stop();
       _readyCompleter = null;
       _acceptLiveAudio = false;
       _speechHintPending = false;

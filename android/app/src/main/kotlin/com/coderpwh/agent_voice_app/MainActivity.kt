@@ -445,6 +445,9 @@ private class VoiceAudioEngine(
             throw IllegalStateException("AudioTrack initialization failed")
         }
         track = player
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            player.setStartThresholdInFrames(OUTPUT_SAMPLE_RATE / 25)
+        }
         player.play()
         playbackThread = thread(name = "agent-voice-playback", start = true) {
             while (running.get()) {

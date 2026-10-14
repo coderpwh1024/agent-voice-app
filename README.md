@@ -131,6 +131,8 @@ test/                          协议契约与 Widget 测试
 
 麦克风只有一条采集链路。Android 每 40 ms 发送一块 PCM；iOS 在原生音频线程完成硬件采样率到 16 kHz 的转换。待机音频送入独立 isolate 中的 sherpa-onnx，不上传；进入会话后才发送给后端。模型来源、许可和校验值见 `assets/models/sherpa_kws/MODEL_SOURCE.md`。
 
+文字增量实时显示，收到并交给原生播放器首包 PCM 后才切换到播报状态。Android 12 及以上请求 40 ms 的 AudioTrack 启动阈值，保留原有播放缓冲容量；旧版 Android 和 iOS 沿用各自系统播放器行为。调试版输出每轮首字到首包接收、原生入队的毫秒耗时，控制器的 `responseLatencyMs` 同时保留后端可选 `latency_ms`（使用 `server_` 前缀）。客户端与服务端时钟分别统计，入队、WebSocket 发送和实际声学出声是不同阶段。
+
 ## 构建与验证
 
 ```bash
