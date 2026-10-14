@@ -338,7 +338,7 @@ class _AuthPageState extends State<AuthPage> {
                     keyboardType: TextInputType.url,
                     autocorrect: false,
                     decoration: const InputDecoration(
-                      hintText: 'http://10.0.2.2:8000',
+                      hintText: 'http://127.0.0.1:8000',
                       prefixIcon: Icon(Icons.dns_outlined),
                     ),
                   ),

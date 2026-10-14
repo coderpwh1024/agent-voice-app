@@ -63,11 +63,11 @@ flutter test
 flutter run
 ```
 
-也可在开发期用 Dart Define 设置初值：
+App 默认使用 USB 真机地址 `http://127.0.0.1:8000`，也可在开发期用 Dart Define 设置初值：
 
 ```bash
 flutter run \
-  --dart-define=API_BASE_URL=http://10.0.2.2:8000
+  --dart-define=API_BASE_URL=http://127.0.0.1:8000
 ```
 
 USB 真机调试使用项目脚本。它会构建带 `http://127.0.0.1:8000` 地址的 Debug APK、覆盖安装、重新建立 `adb reverse` 并启动 App：

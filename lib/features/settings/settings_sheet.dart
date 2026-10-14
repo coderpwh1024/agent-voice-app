@@ -80,7 +80,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
                 autocorrect: false,
                 decoration: const InputDecoration(
                   labelText: '后端地址',
-                  hintText: 'http://10.0.2.2:8000',
+                  hintText: 'http://127.0.0.1:8000',
                   prefixIcon: Icon(Icons.dns_outlined),
                 ),
               ),
