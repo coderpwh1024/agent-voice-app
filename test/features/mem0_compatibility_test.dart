@@ -88,6 +88,8 @@ void main() {
         ),
       );
       await tester.pump();
+      await tester.tap(find.byTooltip('对话偏好'));
+      await tester.pumpAndSettle();
       Finder agentField() => find.byType(DropdownButtonFormField<String>).first;
       expect(
         tester
@@ -97,11 +99,15 @@ void main() {
       );
       expect(find.textContaining('Mem0'), findsWidgets);
       expect(tester.getSize(agentField()).width, greaterThan(300));
+      await tester.tap(find.byTooltip('关闭对话偏好'));
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('现在开始说话'));
       await tester.tap(find.text('现在开始说话'));
       await tester.pump();
       controller.redraw();
       await tester.pump();
+      await tester.tap(find.byTooltip('对话偏好'));
+      await tester.pumpAndSettle();
       expect(
         tester
             .widget<DropdownButtonFormField<String>>(agentField())

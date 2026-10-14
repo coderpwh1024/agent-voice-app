@@ -76,7 +76,7 @@ void main() {
 
     expect(find.text('嗨，我是小美'), findsOneWidget);
     expect(find.textContaining('“小美”'), findsWidgets);
-    expect(find.text('现在开始说话'), findsOneWidget);
+    expect(find.text('连接服务'), findsOneWidget);
     expect(find.byType(Switch), findsNothing);
     expect(tester.takeException(), isNull);
 

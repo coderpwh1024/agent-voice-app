@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../../core/api/api_models.dart';
 import '../../core/audio/audio_bridge.dart';
@@ -37,12 +38,25 @@ class _VoiceHomePageState extends State<VoiceHomePage>
   bool _enablingDefaultWake = false;
   bool _defaultWakeAttempted = false;
   bool _browsingHistory = false;
+  bool _followingLatest = true;
+  bool _showBackToTop = false;
+  bool _awayFromLatest = false;
+  bool _hasNewContent = false;
+  bool _followScheduled = false;
+  bool _scrollingToStart = false;
+  int _newMessageCount = 0;
+  late int _lastMessageCount;
+  ConversationEntry? _lastEntry;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _lastMessageCount = widget.controller.messages.length;
+    _lastEntry = widget.controller.messages.lastOrNull;
+    _scroll.addListener(_scrollChanged);
     widget.controller.addListener(_changed);
+    _scheduleFollowLatest();
     _scheduleDefaultWake();
   }
 
@@ -51,6 +65,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
     WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_changed);
     _text.dispose();
+    _scroll.removeListener(_scrollChanged);
     _scroll.dispose();
     super.dispose();
   }
@@ -82,17 +97,172 @@ class _VoiceHomePageState extends State<VoiceHomePage>
       _agentId = session.agentId;
       _threadId = session.threadId;
     }
+    final messages = widget.controller.messages;
+    final changed =
+        messages.length != _lastMessageCount ||
+        messages.lastOrNull != _lastEntry;
+    if (messages.isEmpty) {
+      _followingLatest = true;
+      _newMessageCount = 0;
+      _hasNewContent = false;
+    } else if (changed && !_followingLatest) {
+      _newMessageCount += (messages.length - _lastMessageCount).clamp(
+        0,
+        messages.length,
+      );
+      _hasNewContent = true;
+    }
+    _lastMessageCount = messages.length;
+    _lastEntry = messages.lastOrNull;
     setState(() {});
     _scheduleDefaultWake();
+    if (changed) _scheduleFollowLatest();
+  }
+
+  void _scrollChanged() {
+    if (!mounted || !_scroll.hasClients) return;
+    final position = _scroll.position;
+    final showTop = position.pixels > 240;
+    final away = position.extentAfter > 80;
+    final cleared =
+        position.extentAfter <= 24 &&
+        !_scrollingToStart &&
+        (_hasNewContent || _newMessageCount > 0);
+    if (position.extentAfter <= 24 && !_scrollingToStart) {
+      _followingLatest = true;
+      _newMessageCount = 0;
+      _hasNewContent = false;
+    }
+    if (showTop != _showBackToTop || away != _awayFromLatest || cleared) {
+      setState(() {
+        _showBackToTop = showTop;
+        _awayFromLatest = away;
+      });
+    }
+  }
+
+  bool _onScrollNotification(ScrollNotification notification) {
+    if (notification.depth != 0) return false;
+    if (notification is UserScrollNotification &&
+        notification.direction == ScrollDirection.forward) {
+      _followingLatest = false;
+    }
+    if (notification is ScrollUpdateNotification &&
+        notification.dragDetails != null) {
+      _followingLatest = notification.metrics.extentAfter <= 24;
+    }
+    return false;
+  }
+
+  void _scheduleFollowLatest() {
+    if (_followScheduled) return;
+    _followScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scroll.hasClients && widget.controller.messages.isNotEmpty) {
-        _scroll.animateTo(
-          _scroll.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOut,
-        );
+      _followScheduled = false;
+      if (!mounted || !_scroll.hasClients) return;
+      if (_followingLatest &&
+          widget.controller.messages.isNotEmpty &&
+          _scroll.position.extentAfter > 0.5) {
+        _scroll.jumpTo(_scroll.position.maxScrollExtent);
       }
+      _scrollChanged();
     });
+  }
+
+  Future<void> _jumpToStart() async {
+    if (!_scroll.hasClients) return;
+    _followingLatest = false;
+    _scrollingToStart = true;
+    await _scrollTo(0);
+    _scrollingToStart = false;
+  }
+
+  Future<void> _jumpToLatest() async {
+    if (!_scroll.hasClients) return;
+    _followingLatest = true;
+    setState(() {
+      _newMessageCount = 0;
+      _hasNewContent = false;
+    });
+    await _scrollTo(_scroll.position.maxScrollExtent);
+    _scheduleFollowLatest();
+  }
+
+  Future<void> _scrollTo(double offset) async {
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _scroll.jumpTo(offset);
+    } else {
+      await _scroll.animateTo(
+        offset,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  Future<void> _showPreferences() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      constraints: const BoxConstraints(maxWidth: 760),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, refresh) => ListenableBuilder(
+          listenable: widget.controller,
+          builder: (context, _) => SingleChildScrollView(
+            padding: EdgeInsets.only(
+              bottom: 24 + MediaQuery.viewInsetsOf(context).bottom,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 12, 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '让对话更合心意',
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: '关闭对话偏好',
+                        onPressed: () => Navigator.pop(sheetContext),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                ),
+                _ConversationPreferences(
+                  capabilities: widget.controller.capabilities,
+                  selectedAgent: _selectedAgent,
+                  selectedVoice: _selectedVoice,
+                  connected: widget.controller.isConnected,
+                  processingState: widget.controller.audioProcessingState,
+                  threadId: _threadId,
+                  onAgentChanged: (value) async {
+                    await _changeAgent(value);
+                    if (sheetContext.mounted) refresh(() {});
+                  },
+                  onVoiceChanged: (value) async {
+                    await _changeVoice(value);
+                    if (sheetContext.mounted) refresh(() {});
+                  },
+                  onConfigure: () {
+                    Navigator.pop(sheetContext);
+                    _openSettings();
+                  },
+                  onReload: _reloadCapabilities,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   AgentCapability? get _selectedAgent {
@@ -271,6 +441,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
       _threadId = thread.threadId;
       _defaultWakeAttempted = false;
     });
+    _followingLatest = true;
     try {
       await widget.controller.loadHistory(thread.agentId, thread.threadId);
     } catch (error) {
@@ -293,6 +464,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
     if (!widget.controller.isConnected || _text.text.trim().isEmpty) {
       return;
     }
+    _followingLatest = true;
     final value = _text.text;
     _text.clear();
     widget.controller.sendText(value);
@@ -303,167 +475,338 @@ class _VoiceHomePageState extends State<VoiceHomePage>
     final controller = widget.controller;
     final capabilities = controller.capabilities;
     final connected = controller.isConnected;
-    final agent = _selectedAgent;
-    final voice = _selectedVoice;
+    final messages = controller.messages;
     final dark = Theme.of(context).brightness == Brightness.dark;
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
+    final availableHeight =
+        MediaQuery.sizeOf(context).height -
+        MediaQuery.viewInsetsOf(context).bottom;
+    final status = _statusLabel(controller.state, capabilities);
+    final color = _statusColor(controller.state);
     return Scaffold(
       backgroundColor: dark ? const Color(0xff171412) : const Color(0xfffbf8f4),
       appBar: AppBar(
-        toolbarHeight: 72,
-        titleSpacing: 20,
-        title: const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Agent Voice'),
-            SizedBox(height: 2),
-            Text(
-              'YOUR EVERYDAY AI COMPANION',
-              style: TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 1.6,
-                color: Color(0xffa8877c),
+        toolbarHeight:
+            72 + (MediaQuery.textScalerOf(context).scale(16) - 16).clamp(0, 24),
+        titleSpacing: 16,
+        title: Semantics(
+          button: true,
+          label:
+              '对话偏好，${recordAgentName(_selectedAgent?.id ?? 'chatbot')}，$status',
+          excludeSemantics: true,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: _showPreferences,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    recordAgentName(_selectedAgent?.id ?? 'chatbot'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: color,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          status,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-          ],
+          ),
         ),
         actions: [
+          IconButton(
+            tooltip: '对话偏好',
+            onPressed: _showPreferences,
+            icon: const Icon(Icons.tune_rounded),
+          ),
           IconButton(
             tooltip: '聊天记录',
             onPressed: connected ? null : _openHistory,
             icon: const Icon(Icons.history_rounded),
-            style: IconButton.styleFrom(
-              backgroundColor: dark
-                  ? const Color(0xff272220)
-                  : const Color(0xfffffdfb),
-            ),
           ),
-          const SizedBox(width: 6),
           IconButton(
             tooltip: '个人主页',
             onPressed: connected ? null : _openProfile,
             icon: ProfileAvatar(
               nickname: widget.user.nickname,
               imageUrl: widget.user.imageUrl,
-              size: 34,
+              size: 32,
               ring: false,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
         ],
       ),
-      body: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: dark
-                ? const [Color(0xff171412), Color(0xff201b18)]
-                : const [Color(0xfffbf8f4), Color(0xfffffcfa)],
-          ),
-        ),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            children: [
-              Expanded(
-                child: CustomScrollView(
-                  controller: _scroll,
-                  slivers: [
-                    SliverToBoxAdapter(
-                      child: _ConnectionPanel(
-                        state: controller.state,
-                        capabilities: capabilities,
-                        selectedAgent: agent,
-                        selectedVoice: voice,
-                        connected: connected,
-                        processingState: controller.audioProcessingState,
-                        configured: controller.config.isComplete,
-                        threadId: _threadId,
-                        onAgentChanged: _changeAgent,
-                        onVoiceChanged: _changeVoice,
-                        onConnect:
-                            controller.config.isComplete &&
-                                capabilities?.enabled == true
-                            ? _connect
-                            : null,
-                        onDisconnect: controller.disconnect,
-                        onConfigure: _openSettings,
-                        onReload: _reloadCapabilities,
-                      ),
-                    ),
-                    if (controller.error != null)
-                      SliverToBoxAdapter(
-                        child: MaterialBanner(
-                          content: Text(controller.error!),
-                          leading: const Icon(Icons.error_outline),
-                          actions: [
-                            TextButton(
-                              onPressed: _retryDefaultWake,
-                              child: const Text('重试'),
+      body: SafeArea(
+        top: false,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: Column(
+              children: [
+                Expanded(
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: NotificationListener<ScrollMetricsNotification>(
+                          onNotification: (_) {
+                            _scheduleFollowLatest();
+                            return false;
+                          },
+                          child: NotificationListener<ScrollNotification>(
+                            onNotification: _onScrollNotification,
+                            child: Scrollbar(
+                              controller: _scroll,
+                              child: CustomScrollView(
+                                key: const ValueKey('conversation-scroll'),
+                                controller: _scroll,
+                                keyboardDismissBehavior:
+                                    ScrollViewKeyboardDismissBehavior.onDrag,
+                                slivers: [
+                                  if (controller.error != null)
+                                    SliverToBoxAdapter(
+                                      child: Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          16,
+                                          8,
+                                          16,
+                                          0,
+                                        ),
+                                        child: Material(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .errorContainer,
+                                          borderRadius: BorderRadius.circular(
+                                            20,
+                                          ),
+                                          child: Padding(
+                                            padding: const EdgeInsets.fromLTRB(
+                                              14,
+                                              10,
+                                              8,
+                                              6,
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  controller.error!,
+                                                  maxLines: 3,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .onErrorContainer,
+                                                  ),
+                                                ),
+                                                Wrap(
+                                                  children: [
+                                                    TextButton(
+                                                      onPressed:
+                                                          _retryDefaultWake,
+                                                      child: const Text('重试'),
+                                                    ),
+                                                    TextButton(
+                                                      onPressed: _openSettings,
+                                                      child: const Text('服务设置'),
+                                                    ),
+                                                    TextButton(
+                                                      onPressed:
+                                                          controller.clearError,
+                                                      child: const Text('关闭'),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  if (messages.isEmpty) ...[
+                                    SliverToBoxAdapter(
+                                      child: _WelcomeCard(
+                                        state: controller.state,
+                                        capabilities: capabilities,
+                                      ),
+                                    ),
+                                    SliverToBoxAdapter(
+                                      child: _EmptyConversation(
+                                        configured:
+                                            controller.config.isComplete,
+                                      ),
+                                    ),
+                                  ] else ...[
+                                    SliverToBoxAdapter(
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 20,
+                                        ),
+                                        child: Text(
+                                          '每一句，都值得被听见',
+                                          textAlign: TextAlign.center,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .labelSmall
+                                              ?.copyWith(
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .onSurfaceVariant,
+                                              ),
+                                        ),
+                                      ),
+                                    ),
+                                    SliverPadding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        16,
+                                        0,
+                                        16,
+                                        16,
+                                      ),
+                                      sliver: SliverList.builder(
+                                        itemCount: messages.length,
+                                        itemBuilder: (context, index) =>
+                                            _MessageBubble(
+                                              entry: messages[index],
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
                             ),
-                            TextButton(
-                              onPressed: controller.clearError,
-                              child: const Text('关闭'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    if (controller.messages.isEmpty)
-                      SliverToBoxAdapter(
-                        child: _EmptyConversation(
-                          configured: controller.config.isComplete,
-                        ),
-                      )
-                    else
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-                        sliver: SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) => _MessageBubble(
-                              entry: controller.messages[index],
-                            ),
-                            childCount: controller.messages.length,
                           ),
                         ),
                       ),
-                  ],
-                ),
-              ),
-              if (controller.partialTranscript.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.graphic_eq, size: 18),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          controller.partialTranscript,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                color: Theme.of(context).colorScheme.primary,
-                                fontStyle: FontStyle.italic,
-                              ),
+                      if (_showBackToTop && messages.isNotEmpty)
+                        Positioned(
+                          top: 10,
+                          right: 12,
+                          child: _ScrollShortcut(
+                            label: '回到顶部',
+                            icon: Icons.vertical_align_top_rounded,
+                            onPressed: _jumpToStart,
+                          ),
                         ),
-                      ),
+                      if (_awayFromLatest && messages.isNotEmpty)
+                        Positioned(
+                          bottom: 12,
+                          right: 12,
+                          child: _ScrollShortcut(
+                            label: _newMessageCount > 0
+                                ? '$_newMessageCount 条新消息'
+                                : _hasNewContent
+                                ? '有新内容'
+                                : '最新消息',
+                            icon: Icons.arrow_downward_rounded,
+                            onPressed: _jumpToLatest,
+                            emphasized: _hasNewContent,
+                          ),
+                        ),
                     ],
                   ),
                 ),
-              if (controller.approval != null)
-                _ApprovalCard(
-                  prompt: controller.approval!,
-                  onSubmit: controller.submitApproval,
+                if (controller.partialTranscript.isNotEmpty)
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: availableHeight * 0.10,
+                    ),
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 6,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.graphic_eq, size: 18, color: color),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              controller.partialTranscript,
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(color: color),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (controller.approval != null)
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: availableHeight * 0.18,
+                    ),
+                    child: SingleChildScrollView(
+                      child: _ApprovalCard(
+                        prompt: controller.approval!,
+                        onSubmit: controller.submitApproval,
+                      ),
+                    ),
+                  ),
+                _VoiceControls(
+                  state: controller.state,
+                  connected: connected,
+                  status: status,
+                  compact: keyboardOpen,
+                  voiceName: capabilities
+                      ?.voiceOption(_selectedVoice)
+                      ?.displayName,
+                  onPressed: controller.state == VoiceConnectionState.connecting
+                      ? null
+                      : connected
+                      ? controller.disconnect
+                      : !controller.config.isComplete
+                      ? _openSettings
+                      : capabilities?.enabled == true
+                      ? _connect
+                      : _reloadCapabilities,
+                  configured: controller.config.isComplete,
+                  available: capabilities?.enabled == true,
                 ),
-              _Composer(
-                controller: _text,
-                enabled: connected,
-                isSpeaking: controller.state == VoiceConnectionState.speaking,
-                onSend: _sendText,
-                onStop: controller.cancelCurrent,
-                onSpeechHint: controller.speechHint,
-              ),
-            ],
+                _Composer(
+                  controller: _text,
+                  maxLines: keyboardOpen ? (availableHeight < 420 ? 1 : 2) : 4,
+                  enabled: connected,
+                  isSpeaking: controller.state == VoiceConnectionState.speaking,
+                  onSend: _sendText,
+                  onStop: controller.cancelCurrent,
+                  onSpeechHint: controller.speechHint,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -471,36 +814,240 @@ class _VoiceHomePageState extends State<VoiceHomePage>
   }
 }
 
-class _ConnectionPanel extends StatelessWidget {
-  const _ConnectionPanel({
+Color _statusColor(VoiceConnectionState state) => switch (state) {
+  VoiceConnectionState.disconnected => const Color(0xff90746b),
+  VoiceConnectionState.wakeListening ||
+  VoiceConnectionState.ready ||
+  VoiceConnectionState.listening => const Color(0xff4b836c),
+  VoiceConnectionState.connecting => const Color(0xffa36d30),
+  VoiceConnectionState.thinking => const Color(0xff8974b3),
+  VoiceConnectionState.speaking => const Color(0xffb75d56),
+};
+
+String _statusLabel(
+  VoiceConnectionState state,
+  VoiceCapabilities? capabilities,
+) => switch (state) {
+  VoiceConnectionState.disconnected => capabilities == null ? '等待连接' : '随时聊一聊',
+  VoiceConnectionState.wakeListening => '正在等待你的呼唤',
+  VoiceConnectionState.connecting => '正在连接',
+  VoiceConnectionState.ready => '已经准备好',
+  VoiceConnectionState.listening => '正在认真听',
+  VoiceConnectionState.thinking => '正在想一想',
+  VoiceConnectionState.speaking => '正在为你回答',
+};
+
+class _ScrollShortcut extends StatelessWidget {
+  const _ScrollShortcut({
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+    this.emphasized = false,
+  });
+  final String label;
+  final IconData icon;
+  final VoidCallback onPressed;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    elevation: 3,
+    shadowColor: Colors.black.withValues(alpha: 0.12),
+    color: emphasized
+        ? Theme.of(context).colorScheme.primaryContainer
+        : Theme.of(context).colorScheme.surface,
+    borderRadius: BorderRadius.circular(24),
+    child: InkWell(
+      borderRadius: BorderRadius.circular(24),
+      onTap: onPressed,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 48),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _VoiceControls extends StatelessWidget {
+  const _VoiceControls({
     required this.state,
+    required this.connected,
+    required this.status,
+    required this.compact,
+    required this.voiceName,
+    required this.onPressed,
+    required this.configured,
+    required this.available,
+  });
+  final VoiceConnectionState state;
+  final bool connected;
+  final String status;
+  final bool compact;
+  final String? voiceName;
+  final VoidCallback? onPressed;
+  final bool configured;
+  final bool available;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final label = connected
+        ? '结束对话'
+        : !configured
+        ? '配置服务'
+        : !available
+        ? '连接服务'
+        : '现在开始说话';
+    final button = FilledButton.icon(
+      onPressed: onPressed,
+      style: FilledButton.styleFrom(
+        backgroundColor: connected
+            ? theme.colorScheme.surfaceContainerHighest
+            : const Color(0xffb85f56),
+        foregroundColor: connected ? theme.colorScheme.onSurface : Colors.white,
+        minimumSize: const Size(48, 48),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      ),
+      icon: Icon(connected ? Icons.stop_rounded : Icons.mic_rounded, size: 20),
+      label: Text(label, textAlign: TextAlign.center),
+    );
+    return Container(
+      key: const ValueKey('voice-controls'),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(color: theme.dividerColor.withValues(alpha: 0.1)),
+        ),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (compact) {
+            return Align(alignment: Alignment.centerRight, child: button);
+          }
+          final caption = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                connected ? status : '语音陪伴',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                connected ? voiceName ?? '正在对话中' : '叫一声“小美”，我在这里',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          );
+          if (constraints.maxWidth < 350 &&
+              MediaQuery.textScalerOf(context).scale(14) > 19) {
+            return SizedBox(width: double.infinity, child: button);
+          }
+          return Row(
+            children: [
+              Expanded(child: caption),
+              const SizedBox(width: 12),
+              button,
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _WelcomeCard extends StatelessWidget {
+  const _WelcomeCard({required this.state, required this.capabilities});
+  final VoiceConnectionState state;
+  final VoiceCapabilities? capabilities;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(30),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: dark
+              ? const [Color(0xff3a2824), Color(0xff241e2e)]
+              : const [Color(0xffffe9df), Color(0xfff3e8ff)],
+        ),
+      ),
+      child: Column(
+        children: [
+          _VoiceOrb(state: state, color: _statusColor(state), dark: dark),
+          const SizedBox(height: 20),
+          Text(
+            '嗨，我是小美',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '生活的碎片、突然的灵感，都可以说给我听。',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
+          ),
+          const SizedBox(height: 16),
+          _StatusPill(
+            label: _statusLabel(state, capabilities),
+            color: _statusColor(state),
+            dark: dark,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConversationPreferences extends StatelessWidget {
+  const _ConversationPreferences({
     required this.capabilities,
     required this.selectedAgent,
     required this.selectedVoice,
     required this.connected,
     required this.processingState,
-    required this.configured,
     required this.threadId,
     required this.onAgentChanged,
     required this.onVoiceChanged,
-    required this.onConnect,
-    required this.onDisconnect,
     required this.onConfigure,
     required this.onReload,
   });
-
-  final VoiceConnectionState state;
   final VoiceCapabilities? capabilities;
   final AgentCapability? selectedAgent;
   final String? selectedVoice;
   final bool connected;
   final AudioProcessingState? processingState;
-  final bool configured;
   final String? threadId;
   final ValueChanged<String?> onAgentChanged;
   final ValueChanged<String?> onVoiceChanged;
-  final VoidCallback? onConnect;
-  final VoidCallback onDisconnect;
   final VoidCallback onConfigure;
   final VoidCallback onReload;
 
@@ -508,333 +1055,167 @@ class _ConnectionPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final dark = theme.brightness == Brightness.dark;
-    final keyword = capabilities?.wakeWord.keyword ?? '小美';
-    final statusColor = switch (state) {
-      VoiceConnectionState.disconnected => const Color(0xffad958c),
-      VoiceConnectionState.wakeListening => const Color(0xff5f9b83),
-      VoiceConnectionState.connecting => const Color(0xffdc9a58),
-      VoiceConnectionState.ready ||
-      VoiceConnectionState.listening => const Color(0xff5f9b83),
-      VoiceConnectionState.thinking => const Color(0xff8c7fc4),
-      VoiceConnectionState.speaking => const Color(0xffd87568),
-    };
-    final statusLabel = switch (state) {
-      VoiceConnectionState.disconnected =>
-        capabilities == null ? '正在准备' : '等待启用',
-      VoiceConnectionState.wakeListening => '小美正在等你',
-      VoiceConnectionState.connecting => '正在靠近你',
-      VoiceConnectionState.ready => '已经准备好',
-      VoiceConnectionState.listening => '正在认真听',
-      VoiceConnectionState.thinking => '正在想一想',
-      VoiceConnectionState.speaking => '正在为你回答',
-    };
     final selectedVoiceOption = capabilities?.voiceOption(selectedVoice);
-    final heroText = dark ? const Color(0xfffff8f2) : const Color(0xff4b302a);
-    final heroMuted = dark ? const Color(0xffdbc4bb) : const Color(0xff8b675e);
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          margin: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(30),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: dark
-                  ? const [Color(0xff3a2824), Color(0xff241e2e)]
-                  : const [Color(0xffffe9df), Color(0xfff3e8ff)],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xffd88b78)
-                    .withValues(alpha: dark ? 0.08 : 0.16),
-                blurRadius: 28,
-                offset: const Offset(0, 12),
-              ),
-            ],
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Stack(
-            children: [
-              Positioned(
-                right: -44,
-                top: -52,
-                child: Container(
-                  width: 150,
-                  height: 150,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: dark ? 0.04 : 0.34),
-                  ),
-                ),
-              ),
-              Positioned(
-                left: -30,
-                bottom: -68,
-                child: Container(
-                  width: 138,
-                  height: 138,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xffef9e8a).withValues(alpha: 0.12),
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        _StatusPill(
-                          label: statusLabel,
-                          color: statusColor,
-                          dark: dark,
-                        ),
-                        const Spacer(),
-                        Icon(
-                          Icons.lock_outline_rounded,
-                          size: 15,
-                          color: heroMuted,
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          '离线唤醒',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: heroMuted,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    _VoiceOrb(state: state, color: statusColor, dark: dark),
-                    const SizedBox(height: 13),
-                    Text(
-                      '嗨，我是小美',
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        color: heroText,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.6,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text.rich(
-                      TextSpan(
-                        children: [
-                          const TextSpan(text: '直接说 '),
-                          TextSpan(
-                            text: '“$keyword”',
-                            style: const TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                          const TextSpan(text: '，我就会回应你'),
-                        ],
-                      ),
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: heroMuted,
-                        height: 1.45,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
+      decoration: BoxDecoration(
+        color: dark ? const Color(0xff25211f) : Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: dark ? const Color(0xff3b3430) : const Color(0xffeee5df),
         ),
-        Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
-          decoration: BoxDecoration(
-            color: dark ? const Color(0xff25211f) : Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: dark ? const Color(0xff3b3430) : const Color(0xffeee5df),
-            ),
-          ),
-          child: Column(
+      ),
+      child: Column(
+        children: [
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Row(
-                children: [
-                  Text(
-                    '对话偏好',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (threadId != null)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 9,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xfff5eee9),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        '继续上次对话',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: const Color(0xff8b675e),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 13),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  DropdownButtonFormField<String>(
-                    isExpanded: true,
-                    initialValue: selectedAgent?.id,
-                    decoration: const InputDecoration(
-                      labelText: '助手',
-                      prefixIcon: Icon(Icons.auto_awesome_rounded, size: 19),
-                      isDense: true,
-                    ),
-                    items: capabilities?.agents
-                        .map(
-                          (agent) => DropdownMenuItem(
-                            value: agent.id,
-                            child: Text(
-                              recordAgentName(agent.id),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: connected ? null : onAgentChanged,
-                  ),
-                  const SizedBox(height: 10),
-                  DropdownButtonFormField<String>(
-                    isExpanded: true,
-                    initialValue: selectedVoice,
-                    decoration: const InputDecoration(
-                      labelText: '音色',
-                      prefixIcon: Icon(
-                        Icons.spatial_audio_off_rounded,
-                        size: 19,
-                      ),
-                      isDense: true,
-                    ),
-                    items: capabilities?.voiceOptions
-                        .map(
-                          (voice) => DropdownMenuItem<String>(
-                            value: voice.id,
-                            child: Text(
-                              voice.displayName,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: connected ? null : onVoiceChanged,
-                  ),
-                ],
-              ),
-              if (selectedAgent?.id == 'mem0-chatbot') ...[
-                const SizedBox(height: 8),
-                Text(
-                  'Mem0 记忆状态可在聊天记录中查看',
-                  style: Theme.of(context).textTheme.bodySmall
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              Text(
+                '对话偏好',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
                 ),
-              ],
-              if (selectedVoiceOption != null) ...[
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
+              ),
+              if (threadId != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
                   child: Text(
-                    connected
-                        ? '当前音色：${selectedVoiceOption.displayName}；结束会话后可更换'
-                        : selectedVoiceOption.description.isEmpty
-                        ? '选择音色后，点击“开始语音”即可试听'
-                        : selectedVoiceOption.description,
-                    textAlign: TextAlign.right,
-                    style: Theme.of(context).textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                  ),
-                ),
-              ],
-              if (processingState != null) ...[
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    _FeatureChip(
-                      icon: Icons.noise_control_off_rounded,
-                      label: processingState!.noiseSuppressionEnabled
-                          ? '智能降噪'
-                          : '降噪不可用',
+                    '继续上次对话',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: const Color(0xff8b675e),
+                      fontWeight: FontWeight.w600,
                     ),
-                    const SizedBox(width: 8),
-                    _FeatureChip(
-                      icon: Icons.hearing_rounded,
-                      label: processingState!.aecEnabled
-                          ? '回声消除'
-                          : processingState!.aecAvailable
-                          ? '对话时回声消除'
-                          : '回声消除不可用',
-                    ),
-                  ],
-                ),
-              ],
-              const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: state == VoiceConnectionState.connecting
-                      ? null
-                      : connected
-                      ? onDisconnect
-                      : onConnect,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xffd87568),
-                    foregroundColor: Colors.white,
-                  ),
-                  icon: Icon(
-                    connected ? Icons.stop_circle_outlined : Icons.mic_rounded,
-                  ),
-                  label: Text(
-                    connected
-                        ? '结束当前对话'
-                        : capabilities != null && !capabilities!.enabled
-                        ? '语音服务暂不可用'
-                        : '现在开始说话',
-                  ),
-                ),
-              ),
-              if (capabilities == null || !capabilities!.enabled || !configured)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (capabilities == null || !capabilities!.enabled)
-                        TextButton.icon(
-                          onPressed: onReload,
-                          icon: const Icon(Icons.refresh_rounded, size: 18),
-                          label: Text(
-                            capabilities == null ? '重新读取能力' : '重新检查服务',
-                          ),
-                        ),
-                      if (!configured && !connected)
-                        TextButton.icon(
-                          onPressed: onConfigure,
-                          icon: const Icon(Icons.tune_rounded, size: 18),
-                          label: const Text('配置服务'),
-                        ),
-                    ],
                   ),
                 ),
             ],
           ),
-        ),
-      ],
+          const SizedBox(height: 13),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              DropdownButtonFormField<String>(
+                isExpanded: true,
+                initialValue: selectedAgent?.id,
+                decoration: const InputDecoration(
+                  labelText: '助手',
+                  prefixIcon: Icon(Icons.auto_awesome_rounded, size: 19),
+                  isDense: true,
+                ),
+                items: capabilities?.agents
+                    .map(
+                      (agent) => DropdownMenuItem(
+                        value: agent.id,
+                        child: Text(
+                          recordAgentName(agent.id),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: connected ? null : onAgentChanged,
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                isExpanded: true,
+                initialValue: selectedVoice,
+                decoration: const InputDecoration(
+                  labelText: '音色',
+                  prefixIcon: Icon(Icons.spatial_audio_off_rounded, size: 19),
+                  isDense: true,
+                ),
+                items: capabilities?.voiceOptions
+                    .map(
+                      (voice) => DropdownMenuItem<String>(
+                        value: voice.id,
+                        child: Text(
+                          voice.displayName,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: connected ? null : onVoiceChanged,
+              ),
+            ],
+          ),
+          if (selectedAgent?.id == 'mem0-chatbot') ...[
+            const SizedBox(height: 8),
+            Text(
+              'Mem0 记忆状态可在聊天记录中查看',
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ],
+          if (selectedVoiceOption != null) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                connected
+                    ? '当前音色：${selectedVoiceOption.displayName}；结束会话后可更换'
+                    : selectedVoiceOption.description.isEmpty
+                    ? '选择音色后，点击“现在开始说话”即可体验'
+                    : selectedVoiceOption.description,
+                textAlign: TextAlign.right,
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ),
+          ],
+          if (processingState != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _FeatureChip(
+                  icon: Icons.noise_control_off_rounded,
+                  label: processingState!.noiseSuppressionEnabled
+                      ? '智能降噪'
+                      : '降噪不可用',
+                ),
+                const SizedBox(width: 8),
+                _FeatureChip(
+                  icon: Icons.hearing_rounded,
+                  label: processingState!.aecEnabled
+                      ? '回声消除'
+                      : processingState!.aecAvailable
+                      ? '对话时回声消除'
+                      : '回声消除不可用',
+                ),
+              ],
+            ),
+          ],
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Wrap(
+              spacing: 8,
+              alignment: WrapAlignment.center,
+              children: [
+                if (capabilities == null || !capabilities!.enabled)
+                  TextButton.icon(
+                    onPressed: onReload,
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: Text(capabilities == null ? '重新读取能力' : '重新检查服务'),
+                  ),
+                TextButton.icon(
+                  onPressed: connected ? null : onConfigure,
+                  icon: const Icon(Icons.settings_outlined, size: 18),
+                  label: const Text('服务设置'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -870,11 +1251,13 @@ class _StatusPill extends StatelessWidget {
             decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
           const SizedBox(width: 7),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: dark ? const Color(0xfffff8f2) : const Color(0xff60443d),
-              fontWeight: FontWeight.w700,
+          Flexible(
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: dark ? const Color(0xfffff8f2) : const Color(0xff60443d),
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -999,7 +1382,7 @@ class _EmptyConversation extends StatelessWidget {
             ),
             const SizedBox(height: 7),
             Text(
-              configured ? '叫一声“小美”，或者点上方按钮开始对话' : '配置服务后，小美会在首页默认等待你的呼唤',
+              configured ? '叫一声“小美”，或点下方按钮开始对话' : '配置服务后，小美会在首页默认等待你的呼唤',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
@@ -1070,32 +1453,63 @@ class _MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final human = entry.role == 'human';
-    final color = human
-        ? Theme.of(context).colorScheme.primaryContainer
-        : Theme.of(context).colorScheme.surfaceContainerHighest;
-    return Align(
-      alignment: human ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 560),
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(18),
-            topRight: const Radius.circular(18),
-            bottomLeft: Radius.circular(human ? 18 : 4),
-            bottomRight: Radius.circular(human ? 4 : 18),
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
+    return LayoutBuilder(
+      builder: (context, constraints) => Align(
+        alignment: human ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: (constraints.maxWidth * 0.88).clamp(0, 560),
           ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(entry.text.isEmpty ? '…' : entry.text),
-            if (!human && entry.memoryStatus != null)
-              MemoryStatusNote(status: entry.memoryStatus!),
-          ],
+          margin: EdgeInsets.only(top: human ? 8 : 0, bottom: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          decoration: BoxDecoration(
+            color: human
+                ? null
+                : dark
+                ? const Color(0xff292422)
+                : Colors.white,
+            gradient: human
+                ? LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: dark
+                        ? const [Color(0xff67454b), Color(0xff503b50)]
+                        : const [Color(0xfff9e1da), Color(0xfff0def0)],
+                  )
+                : null,
+            border: human
+                ? null
+                : Border.all(
+                    color: dark
+                        ? const Color(0xff3b3330)
+                        : const Color(0xffeee5df),
+                  ),
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(22),
+              topRight: const Radius.circular(22),
+              bottomLeft: Radius.circular(human ? 22 : 6),
+              bottomRight: Radius.circular(human ? 6 : 22),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SelectableText(
+                entry.text.isEmpty ? '…' : entry.text,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  height: 1.6,
+                  color: dark
+                      ? const Color(0xfffaf1ed)
+                      : const Color(0xff493a35),
+                ),
+              ),
+              if (!human && entry.memoryStatus != null)
+                MemoryStatusNote(status: entry.memoryStatus!),
+            ],
+          ),
         ),
       ),
     );
@@ -1115,18 +1529,30 @@ class _ApprovalCard extends StatelessWidget {
       color: Theme.of(context).colorScheme.tertiaryContainer,
       child: Padding(
         padding: const EdgeInsets.all(14),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(Icons.approval_outlined),
-            const SizedBox(width: 12),
-            Expanded(child: Text(prompt.value?.toString() ?? '需要业务确认')),
-            TextButton(
-              onPressed: () => onSubmit(false),
-              child: const Text('拒绝'),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.approval_outlined),
+                const SizedBox(width: 12),
+                Expanded(child: Text(prompt.value?.toString() ?? '需要业务确认')),
+              ],
             ),
-            FilledButton(
-              onPressed: () => onSubmit(true),
-              child: const Text('同意'),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                TextButton(
+                  onPressed: () => onSubmit(false),
+                  child: const Text('拒绝'),
+                ),
+                FilledButton(
+                  onPressed: () => onSubmit(true),
+                  child: const Text('同意'),
+                ),
+              ],
             ),
           ],
         ),
@@ -1138,6 +1564,7 @@ class _ApprovalCard extends StatelessWidget {
 class _Composer extends StatelessWidget {
   const _Composer({
     required this.controller,
+    required this.maxLines,
     required this.enabled,
     required this.isSpeaking,
     required this.onSend,
@@ -1146,6 +1573,7 @@ class _Composer extends StatelessWidget {
   });
 
   final TextEditingController controller;
+  final int maxLines;
   final bool enabled;
   final bool isSpeaking;
   final VoidCallback onSend;
@@ -1191,7 +1619,7 @@ class _Composer extends StatelessWidget {
                 child: TextField(
                   controller: controller,
                   minLines: 1,
-                  maxLines: 4,
+                  maxLines: maxLines,
                   textInputAction: TextInputAction.send,
                   onSubmitted: enabled ? (_) => onSend() : null,
                   decoration: const InputDecoration(
