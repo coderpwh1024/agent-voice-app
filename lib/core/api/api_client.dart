@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -5,6 +6,7 @@ import 'dart:typed_data';
 import '../config/app_config.dart';
 import 'api_models.dart';
 import 'chat_record_models.dart';
+import 'memory_models.dart';
 
 class ApiException implements Exception {
   const ApiException(this.statusCode, this.message);
@@ -226,6 +228,109 @@ class AgentApiClient {
       throw const ApiException(0, '请先登录后查看聊天记录');
     }
     return <String, String>{'user_id': userId};
+  }
+
+  Future<Map<String, dynamic>> _memoryRequest(
+    String method,
+    String path, {
+    Map<String, String> query = const {},
+    Map<String, Object?>? body,
+  }) async {
+    final userId = config.userId.trim();
+    if (userId.isEmpty || config.accessToken.trim().isEmpty) {
+      throw const ApiException(401, '请先登录后管理记忆');
+    }
+    try {
+      return await _request(
+        method,
+        path,
+        query: {'user_id': userId, ...query},
+        body: body,
+      ).timeout(const Duration(seconds: 45));
+    } on TimeoutException {
+      throw const ApiException(504, '记忆操作超时，请刷新确认当前状态');
+    }
+  }
+
+  void _validateMemoryLimit(int limit) {
+    if (limit < 1 || limit > 100) {
+      throw const ApiException(422, '每页数量必须在 1 到 100 之间');
+    }
+  }
+
+  String _memoryPath(String id) {
+    if (!RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    ).hasMatch(id)) {
+      throw const ApiException(422, '记忆编号无效，请返回列表刷新');
+    }
+    return '/memories/$id';
+  }
+
+  Future<MemoryPage<MemoryRecord, String>> memories({
+    int limit = 20,
+    String? cursor,
+  }) async {
+    _validateMemoryLimit(limit);
+    if (cursor != null) _memoryPath(cursor);
+    final json = await _memoryRequest(
+      'GET',
+      '/memories',
+      query: {'limit': '$limit', 'cursor': ?cursor},
+    );
+    return MemoryPage(
+      items: (json['memories'] as List<dynamic>)
+          .map((item) => MemoryRecord.fromJson(item as Map<String, dynamic>))
+          .toList(growable: false),
+      nextCursor: json['next_cursor'] as String?,
+    );
+  }
+
+  Future<MemoryRecord> memory(String id) async =>
+      MemoryRecord.fromJson(await _memoryRequest('GET', _memoryPath(id)));
+
+  Future<MemoryRecord> updateMemory(String id, String text) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty || trimmed.runes.length > 6000) {
+      throw const ApiException(422, '记忆内容需要 1 到 6000 个字符');
+    }
+    return MemoryRecord.fromJson(
+      await _memoryRequest('PUT', _memoryPath(id), body: {'text': trimmed}),
+    );
+  }
+
+  Future<int> deleteMemory(String id) async {
+    final json = await _memoryRequest('DELETE', _memoryPath(id));
+    return json['deleted_count'] as int;
+  }
+
+  Future<int> deleteMemories() async {
+    final json = await _memoryRequest('DELETE', '/memories');
+    return json['deleted_count'] as int;
+  }
+
+  Future<MemoryPage<MemoryHistoryEntry, int>> memoryHistory(
+    String id, {
+    int limit = 20,
+    int? cursor,
+  }) async {
+    _validateMemoryLimit(limit);
+    if (cursor != null && cursor < 1) {
+      throw const ApiException(422, '变更历史游标无效');
+    }
+    final json = await _memoryRequest(
+      'GET',
+      '${_memoryPath(id)}/history',
+      query: {'limit': '$limit', if (cursor != null) 'cursor': '$cursor'},
+    );
+    return MemoryPage(
+      items: (json['history'] as List<dynamic>)
+          .map(
+            (item) => MemoryHistoryEntry.fromJson(item as Map<String, dynamic>),
+          )
+          .toList(growable: false),
+      nextCursor: json['next_cursor'] as int?,
+    );
   }
 
   Uri websocketUri(String sessionId) {

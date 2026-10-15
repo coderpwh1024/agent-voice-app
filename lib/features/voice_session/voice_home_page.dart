@@ -5,7 +5,7 @@ import 'package:flutter/rendering.dart';
 
 import '../../core/api/api_models.dart';
 import '../../core/audio/audio_bridge.dart';
-import '../conversations/chat_records_page.dart';
+import '../conversations/personal_library_page.dart';
 import '../conversations/chat_record_widgets.dart';
 import '../profile/profile_avatar.dart';
 import 'voice_session_controller.dart';
@@ -384,10 +384,17 @@ class _VoiceHomePageState extends State<VoiceHomePage>
   }
 
   Future<void> _openProfile() async {
-    await widget.onOpenProfile(context);
-    if (!mounted) return;
-    _defaultWakeAttempted = false;
-    _scheduleDefaultWake();
+    if (_browsingHistory) return;
+    _browsingHistory = true;
+    try {
+      await widget.onOpenProfile(context);
+    } finally {
+      _browsingHistory = false;
+      if (mounted) {
+        _defaultWakeAttempted = false;
+        _scheduleDefaultWake();
+      }
+    }
   }
 
   Future<void> _openSettings() async {
@@ -407,7 +414,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
       if (!mounted) return;
       final thread = await Navigator.of(context).push<ThreadSummary>(
         MaterialPageRoute(
-          builder: (_) => ChatRecordsPage(
+          builder: (_) => PersonalLibraryPage(
             config: widget.controller.config,
             agents: widget.controller.capabilities?.agents ?? const [],
             initialAgentId:
@@ -551,9 +558,9 @@ class _VoiceHomePageState extends State<VoiceHomePage>
             icon: const Icon(Icons.tune_rounded),
           ),
           IconButton(
-            tooltip: '聊天记录',
+            tooltip: '记忆与对话',
             onPressed: connected ? null : _openHistory,
-            icon: const Icon(Icons.history_rounded),
+            icon: const Icon(Icons.collections_bookmark_outlined),
           ),
           IconButton(
             tooltip: '个人主页',

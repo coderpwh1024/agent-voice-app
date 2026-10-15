@@ -4,6 +4,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/api_models.dart';
 import '../../core/api/chat_record_models.dart';
 import '../../core/config/app_config.dart';
+import '../memories/memories_page.dart';
 import 'chat_record_detail_page.dart';
 import 'chat_record_widgets.dart';
 
@@ -104,6 +105,15 @@ class _ChatRecordsPageState extends State<ChatRecordsPage> {
         surfaceTintColor: Colors.transparent,
         title: const Text('聊天记录'),
         actions: [
+          IconButton(
+            tooltip: '查看长期记忆',
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => MemoriesPage(config: widget.config, api: _api),
+              ),
+            ),
+            icon: const Icon(Icons.psychology_outlined),
+          ),
           IconButton(
             tooltip: '刷新聊天记录',
             onPressed: _loading ? null : _load,

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_models.dart';
 import '../../core/config/app_config.dart';
+import '../memories/memories_page.dart';
 import 'edit_profile_page.dart';
 import 'profile_avatar.dart';
 
@@ -251,6 +252,16 @@ class _ProfilePageState extends State<ProfilePage> {
               const SizedBox(height: 12),
               _ProfileCard(
                 children: [
+                  _ActionRow(
+                    icon: Icons.psychology_outlined,
+                    label: '长期记忆',
+                    onTap: () => Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => MemoriesPage(config: widget.config),
+                      ),
+                    ),
+                  ),
+                  const _CardDivider(),
                   _ActionRow(
                     icon: Icons.tune_rounded,
                     label: '连接设置',

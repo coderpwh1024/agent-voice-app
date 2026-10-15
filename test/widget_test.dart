@@ -94,15 +94,26 @@ void main() {
     expect(find.text('嗨，我是小美'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
-    await tester.tap(find.byTooltip('聊天记录'));
+    await tester.tap(find.byTooltip('记忆与对话'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('记忆与对话'), findsOneWidget);
+    expect(find.text('长期记忆'), findsOneWidget);
+    await tester.ensureVisible(find.text('历史对话'));
+    await tester.pump();
+    await tester.tap(find.text('历史对话'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('聊天记录'), findsOneWidget);
     expect(find.text('把对话，留在这里。'), findsOneWidget);
     expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(seconds: 1));
     await tester.pageBack();
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
+    await tester.pageBack();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
     await tester.tap(find.byTooltip('个人主页'));
     await tester.pump();
