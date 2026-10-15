@@ -75,7 +75,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('嗨，我是小美'), findsOneWidget);
-    expect(find.textContaining('“小美”'), findsWidgets);
+    expect(find.textContaining('“小美，小美”'), findsWidgets);
     expect(find.text('连接服务'), findsOneWidget);
     expect(find.byType(Switch), findsNothing);
     expect(tester.takeException(), isNull);

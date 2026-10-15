@@ -100,7 +100,7 @@ class FakeWakeWordDetector implements WakeWordDetector {
   @override
   void reset() {}
 
-  void trigger() => controller.add(const WakeDetection(keyword: '小美'));
+  void trigger() => controller.add(const WakeDetection(keyword: '小美小美'));
 
   @override
   Future<void> dispose() => controller.close();
@@ -351,116 +351,174 @@ void main() {
     await server.close(force: true);
   });
 
-  test(
-    'wake detection opens a confirmed session with pre-roll audio',
-    () async {
-      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      final createdBodies = <Map<String, dynamic>>[];
-      WebSocket? wakeSocket;
-      server.listen((request) async {
-        if (WebSocketTransformer.isUpgradeRequest(request)) {
-          wakeSocket = await WebSocketTransformer.upgrade(request);
-          wakeSocket!.listen((_) {});
-          await Future<void>.delayed(const Duration(milliseconds: 10));
-          wakeSocket!.add(
+  for (final wakeCase
+      in <({String transcript, String? command, String expected})>[
+        (
+          transcript: '小美，小美，小美，介绍一下你自己',
+          command: '介绍一下你自己',
+          expected: '介绍一下你自己',
+        ),
+        (transcript: '小美小美小美', command: '', expected: ''),
+        (transcript: ' 小 美，小美、小美，介绍一下你自己', command: null, expected: '介绍一下你自己'),
+        (transcript: '小美，小美，小美。', command: null, expected: ''),
+      ]) {
+    test(
+      'wake confirmation strips repeated calls: ${wakeCase.transcript}',
+      () async {
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        final createdBodies = <Map<String, dynamic>>[];
+        WebSocket? wakeSocket;
+        server.listen((request) async {
+          if (WebSocketTransformer.isUpgradeRequest(request)) {
+            wakeSocket = await WebSocketTransformer.upgrade(request);
+            wakeSocket!.listen((_) {});
+            await Future<void>.delayed(const Duration(milliseconds: 10));
+            wakeSocket!.add(
+              jsonEncode(<String, Object?>{
+                'type': 'session.ready',
+                'connection_id': '00112233-4455-6677-8899-aabbccddeeff',
+              }),
+            );
+            return;
+          }
+          if (request.method == 'POST') {
+            createdBodies.add(
+              jsonDecode(await utf8.decoder.bind(request).join())
+                  as Map<String, dynamic>,
+            );
+          }
+          request.response.headers.contentType = ContentType.json;
+          final data = switch ((request.method, request.uri.path)) {
+            ('GET', '/voice/capabilities') => <String, Object?>{
+              'enabled': true,
+              'protocol_version': 1,
+              'voices': <String>['Cherry'],
+              'default_voice': 'Cherry',
+              'wake_word': <String, Object?>{
+                'enabled': true,
+                'keyword': '小美小美',
+                'confirm_with_asr': true,
+                'pre_roll_ms': 1200,
+                'kws_score': 1.0,
+                'kws_threshold': 0.5,
+              },
+              'client_vad': <String, Object?>{
+                'enabled': true,
+                'rms_dbfs': -42,
+                'speech_frames': 3,
+              },
+              'audio_metrics_seconds': 5,
+              'agents': <Object?>[],
+            },
+            ('POST', '/voice/sessions') => <String, Object?>{
+              'session_id': '11111111-2222-4333-8444-555555555555',
+              'thread_id': 'thread-1',
+              'agent_id': 'chatbot',
+              'voice': 'Cherry',
+              'activation': 'wake_word',
+              'wake_status': 'pending',
+              'expires_at': '2099-01-01T00:00:00Z',
+            },
+            ('DELETE', _) => <String, Object?>{'status': 'closing'},
+            _ => throw StateError(
+              'Unexpected request: ${request.method} ${request.uri.path}',
+            ),
+          };
+          request.response.write(
             jsonEncode(<String, Object?>{
-              'type': 'session.ready',
-              'connection_id': '00112233-4455-6677-8899-aabbccddeeff',
+              'code': 200,
+              'message': 'success',
+              'data': data,
             }),
           );
-          return;
-        }
-        if (request.method == 'POST') {
-          createdBodies.add(
-            jsonDecode(await utf8.decoder.bind(request).join())
-                as Map<String, dynamic>,
-          );
-        }
-        request.response.headers.contentType = ContentType.json;
-        final data = switch ((request.method, request.uri.path)) {
-          ('GET', '/voice/capabilities') => <String, Object?>{
-            'enabled': true,
-            'protocol_version': 1,
-            'voices': <String>['Cherry'],
-            'default_voice': 'Cherry',
-            'wake_word': <String, Object?>{
-              'enabled': true,
-              'keyword': '小美',
-              'confirm_with_asr': true,
-              'pre_roll_ms': 1200,
-              'kws_score': 1.0,
-              'kws_threshold': 0.5,
-            },
-            'client_vad': <String, Object?>{
-              'enabled': true,
-              'rms_dbfs': -42,
-              'speech_frames': 3,
-            },
-            'audio_metrics_seconds': 5,
-            'agents': <Object?>[],
-          },
-          ('POST', '/voice/sessions') => <String, Object?>{
-            'session_id': '11111111-2222-4333-8444-555555555555',
-            'thread_id': 'thread-1',
-            'agent_id': 'chatbot',
-            'voice': 'Cherry',
-            'activation': 'wake_word',
-            'wake_status': 'pending',
-            'expires_at': '2099-01-01T00:00:00Z',
-          },
-          ('DELETE', _) => <String, Object?>{'status': 'closing'},
-          _ => throw StateError(
-            'Unexpected request: ${request.method} ${request.uri.path}',
+          await request.response.close();
+        });
+        final audio = FakeAudioBridge();
+        final wake = FakeWakeWordDetector();
+        final controller = VoiceSessionController(
+          config: AppConfig(
+            baseUrl: 'http://${server.address.host}:${server.port}',
+            accessToken: 'test-token',
+            userId: '42',
           ),
-        };
-        request.response.write(
-          jsonEncode(<String, Object?>{
-            'code': 200,
-            'message': 'success',
-            'data': data,
+          audio: audio,
+          wakeWordDetector: wake,
+        );
+
+        await controller.loadCapabilities();
+        await controller.enableWakeWord(agentId: 'chatbot', voice: 'Cherry');
+        audio.microphone.add(Uint8List(640));
+        await waitUntil(() => wake.frames.isNotEmpty);
+        wake.trigger();
+        wake.trigger();
+        wake.trigger();
+        await waitUntil(
+          () => controller.state == VoiceConnectionState.listening,
+        );
+
+        expect(audio.startedModes, <AudioCaptureMode>[
+          AudioCaptureMode.standby,
+          AudioCaptureMode.conversation,
+        ]);
+        expect(createdBodies.single['activation'], 'wake_word');
+        expect(createdBodies.single['wake_word'], '小美小美');
+        expect(createdBodies.single['wake_engine'], 'sherpa-onnx-1.13.8');
+        expect(createdBodies.single['pre_roll_samples'], 320);
+
+        wakeSocket!.add(
+          jsonEncode({'type': 'transcript.final', 'text': wakeCase.transcript}),
+        );
+        wakeSocket!.add(
+          jsonEncode({
+            'type': 'wake.accepted',
+            if (wakeCase.command != null) 'command': wakeCase.command,
           }),
         );
-        await request.response.close();
-      });
-      final audio = FakeAudioBridge();
-      final wake = FakeWakeWordDetector();
-      final controller = VoiceSessionController(
-        config: AppConfig(
-          baseUrl: 'http://${server.address.host}:${server.port}',
-          accessToken: 'test-token',
-          userId: '42',
-        ),
-        audio: audio,
-        wakeWordDetector: wake,
-      );
+        wakeSocket!.add(
+          jsonEncode({'type': 'wake.accepted', 'command': '重复事件'}),
+        );
+        const greetingId = '11111111-2222-4333-8444-555555555556';
+        wakeSocket!.add(
+          jsonEncode({'type': 'response.started', 'response_id': greetingId}),
+        );
+        wakeSocket!.add(
+          jsonEncode({
+            'type': 'text.delta',
+            'response_id': greetingId,
+            'text': '我在，小美随时为你服务。',
+          }),
+        );
+        wakeSocket!.add(
+          outputAudioFrame(
+            connectionId: '00112233-4455-6677-8899-aabbccddeeff',
+            responseId: greetingId,
+          ),
+        );
+        await waitUntil(
+          () => controller.state == VoiceConnectionState.speaking,
+        );
+        expect(
+          controller.messages
+              .where((message) => message.role == 'human')
+              .map((message) => message.text),
+          wakeCase.expected.isEmpty ? isEmpty : <String>[wakeCase.expected],
+        );
+        expect(controller.messages.length, wakeCase.expected.isEmpty ? 1 : 2);
+        expect(controller.messages.last.text, '我在，小美随时为你服务。');
+        expect(audio.operations, contains('audio'));
 
-      await controller.loadCapabilities();
-      await controller.enableWakeWord(agentId: 'chatbot', voice: 'Cherry');
-      audio.microphone.add(Uint8List(640));
-      await waitUntil(() => wake.frames.isNotEmpty);
-      wake.trigger();
-      await waitUntil(() => controller.state == VoiceConnectionState.listening);
-
-      expect(audio.startedModes, <AudioCaptureMode>[
-        AudioCaptureMode.standby,
-        AudioCaptureMode.conversation,
-      ]);
-      expect(createdBodies.single['activation'], 'wake_word');
-      expect(createdBodies.single['wake_word'], '小美');
-      expect(createdBodies.single['wake_engine'], 'sherpa-onnx-1.13.8');
-      expect(createdBodies.single['pre_roll_samples'], 320);
-
-      wakeSocket!.add(jsonEncode(<String, Object?>{'type': 'wake.rejected'}));
-      await waitUntil(
-        () => controller.state == VoiceConnectionState.wakeListening,
-      );
-      expect(controller.error, isNull);
-      expect(controller.state, VoiceConnectionState.wakeListening);
-      await controller.disableWakeWord();
-      expect(controller.state, VoiceConnectionState.disconnected);
-      controller.dispose();
-      await audio.close();
-      await server.close(force: true);
-    },
-  );
+        wakeSocket!.add(jsonEncode(<String, Object?>{'type': 'wake.rejected'}));
+        await waitUntil(
+          () => controller.state == VoiceConnectionState.wakeListening,
+        );
+        expect(controller.error, isNull);
+        expect(controller.state, VoiceConnectionState.wakeListening);
+        await controller.disableWakeWord();
+        expect(controller.state, VoiceConnectionState.disconnected);
+        controller.dispose();
+        await audio.close();
+        await server.close(force: true);
+      },
+    );
+  }
 }

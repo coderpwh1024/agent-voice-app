@@ -6,6 +6,8 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
+import 'wake_phrase.dart';
+
 class WakeWordConfig {
   const WakeWordConfig({
     required this.keyword,
@@ -35,9 +37,9 @@ abstract interface class WakeWordDetector {
 
 class SherpaWakeWordDetector implements WakeWordDetector {
   static const _audioMethods = MethodChannel('agent_voice/audio');
-  static const supportedKeyword = '小美';
+  static const supportedKeyword = defaultWakeKeyword;
   static const _assetRoot = 'assets/models/sherpa_kws';
-  static const _modelVersion = 'wenetspeech-3.3m-int8-xiaomei-v3';
+  static const _modelVersion = 'wenetspeech-3.3m-int8-xiaomeixiaomei-v4';
   static const _modelFiles = <String>[
     'encoder.int8.onnx',
     'decoder.int8.onnx',
@@ -58,7 +60,8 @@ class SherpaWakeWordDetector implements WakeWordDetector {
 
   @override
   Future<void> initialize(WakeWordConfig config) async {
-    if (config.keyword != supportedKeyword) {
+    final keyword = normalizeWakeKeyword(config.keyword);
+    if (keyword != supportedKeyword && keyword != '小美') {
       throw UnsupportedError(
         '当前离线模型仅支持唤醒词“$supportedKeyword”，后端下发的是“${config.keyword}”',
       );
@@ -216,6 +219,7 @@ void _wakeWordWorker(Map<String, Object> arguments) {
   }
   final activeSpotter = spotter;
   final activeStream = stream;
+  var detected = false;
 
   commands.listen((dynamic raw) {
     if (raw is! Map) {
@@ -224,6 +228,7 @@ void _wakeWordWorker(Map<String, Object> arguments) {
     try {
       switch (raw['type']) {
         case 'audio':
+          if (detected) return;
           final bytes = (raw['data'] as TransferableTypedData)
               .materialize()
               .asUint8List();
@@ -237,15 +242,18 @@ void _wakeWordWorker(Map<String, Object> arguments) {
             activeSpotter.decode(activeStream);
             final result = activeSpotter.getResult(activeStream);
             if (result.keyword.isNotEmpty) {
+              detected = true;
               resultPort.send(<String, Object>{
                 'type': 'detected',
                 'keyword': result.keyword,
               });
               activeSpotter.reset(activeStream);
+              break;
             }
           }
         case 'reset':
           activeSpotter.reset(activeStream);
+          detected = false;
         case 'stop':
           activeStream.free();
           activeSpotter.free();

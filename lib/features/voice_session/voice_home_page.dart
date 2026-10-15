@@ -958,7 +958,7 @@ class _VoiceControls extends StatelessWidget {
               ),
               const SizedBox(height: 3),
               Text(
-                connected ? voiceName ?? '正在对话中' : '叫一声“小美”，我在这里',
+                connected ? voiceName ?? '正在对话中' : '喊“小美，小美”，我在这里',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.labelSmall?.copyWith(
@@ -1389,7 +1389,7 @@ class _EmptyConversation extends StatelessWidget {
             ),
             const SizedBox(height: 7),
             Text(
-              configured ? '叫一声“小美”，或点下方按钮开始对话' : '配置服务后，小美会在首页默认等待你的呼唤',
+              configured ? '喊“小美，小美”，或点下方按钮开始对话' : '配置服务后，小美会在首页默认等待你的呼唤',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,

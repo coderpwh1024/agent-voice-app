@@ -9,6 +9,7 @@ import '../../core/api/api_models.dart';
 import '../../core/api/voice_protocol.dart';
 import '../../core/api/voice_socket.dart';
 import '../../core/audio/audio_bridge.dart';
+import '../../core/audio/wake_phrase.dart';
 import '../../core/audio/wake_word_detector.dart';
 import '../../core/config/app_config.dart';
 
@@ -589,13 +590,12 @@ class VoiceSessionController extends ChangeNotifier {
           );
         }
       case 'wake.accepted':
+        if (!_wakeConfirmationPending) break;
         final transcript = _pendingWakeTranscript;
         final keyword = _capabilities?.wakeWord.keyword ?? '';
-        final command = transcript != null && transcript.startsWith(keyword)
-            ? transcript
-                  .substring(keyword.length)
-                  .replaceFirst(RegExp(r'^[\s，,。！？!?、]+'), '')
-            : transcript;
+        final command =
+            event['command'] as String? ??
+            (transcript == null ? null : stripWakePrefix(transcript, keyword));
         if (command != null &&
             command.isNotEmpty &&
             !_isNonActionableVoiceText(command)) {
@@ -604,6 +604,8 @@ class VoiceSessionController extends ChangeNotifier {
         _pendingWakeTranscript = null;
         _wakeConfirmationPending = false;
         _wakeTriggered = false;
+        _partialTranscript = '';
+        _setState(VoiceConnectionState.listening);
       case 'wake.rejected':
         _pendingWakeTranscript = null;
         _wakeConfirmationPending = false;
@@ -683,7 +685,7 @@ class VoiceSessionController extends ChangeNotifier {
     final copy = Uint8List.fromList(bytes);
     _preRoll.add(copy);
     _preRollBytes += copy.length;
-    final maximum = ((_capabilities?.wakeWord.preRollMs ?? 1200) * 32).clamp(
+    final maximum = ((_capabilities?.wakeWord.preRollMs ?? 2200) * 32).clamp(
       640,
       96000,
     );
@@ -806,6 +808,9 @@ class VoiceSessionController extends ChangeNotifier {
       _speechFrames = 0;
       _pendingWakeTranscript = null;
       _wakeConfirmationPending = false;
+      _pendingWakeAudio.clear();
+      _preRoll.clear();
+      _preRollBytes = 0;
       if (sendClose && socket != null) {
         socket.sendJson(clientEvent('session.close'));
       }

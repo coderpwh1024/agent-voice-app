@@ -218,9 +218,9 @@ class WakeWordCapability {
   factory WakeWordCapability.fromJson(Map<String, dynamic> json) =>
       WakeWordCapability(
         enabled: json['enabled'] as bool? ?? false,
-        keyword: json['keyword']?.toString() ?? '小美',
+        keyword: json['keyword']?.toString() ?? '小美小美',
         confirmWithAsr: json['confirm_with_asr'] as bool? ?? true,
-        preRollMs: json['pre_roll_ms'] as int? ?? 1200,
+        preRollMs: json['pre_roll_ms'] as int? ?? 2200,
         score: (json['kws_score'] as num?)?.toDouble() ?? 1,
         threshold: (json['kws_threshold'] as num?)?.toDouble() ?? 0.5,
       );
