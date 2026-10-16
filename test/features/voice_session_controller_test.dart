@@ -258,6 +258,50 @@ void main() {
     await controller.connect(agentId: 'chatbot', voice: 'Cherry');
     const connectionId = '00112233-4455-6677-8899-aabbccddeeff';
     const responseId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    addTearDown(() async {
+      controller.dispose();
+      await audio.close();
+      await server.close(force: true);
+    });
+    Future<void> expectIgnoredPunctuation(VoiceConnectionState state) async {
+      const noise = <String>[
+        '。',
+        '.',
+        '...',
+        '．',
+        '，？！',
+        '；：',
+        '——',
+        '“”',
+        '（ ）',
+        '嗯。',
+      ];
+      final partials = <String>[];
+      void recordPartial() => partials.add(controller.partialTranscript);
+      controller.addListener(recordPartial);
+      try {
+        for (final text in noise) {
+          socket!.add(jsonEncode({'type': 'transcript.partial', 'text': text}));
+          socket!.add(jsonEncode({'type': 'transcript.final', 'text': text}));
+        }
+        socket!.add(
+          jsonEncode({'type': 'transcript.partial', 'text': '正常字幕。'}),
+        );
+        await waitUntil(() => controller.partialTranscript == '正常字幕。');
+        expect(partials.where(noise.contains), isEmpty);
+        expect(
+          controller.messages.where((entry) => entry.role == 'human'),
+          isEmpty,
+        );
+        expect(controller.state, state);
+        socket!.add(jsonEncode({'type': 'transcript.final', 'text': ''}));
+        await waitUntil(() => controller.partialTranscript.isEmpty);
+      } finally {
+        controller.removeListener(recordPartial);
+      }
+    }
+
+    await expectIgnoredPunctuation(VoiceConnectionState.listening);
     socket!.add(
       jsonEncode(<String, Object?>{
         'type': 'response.started',
@@ -277,6 +321,7 @@ void main() {
           controller.messages.last.text == '完整回答',
     );
     expect(controller.state, VoiceConnectionState.thinking);
+    await expectIgnoredPunctuation(VoiceConnectionState.thinking);
     socket!.add(jsonEncode(<String, Object?>{'type': 'input.started'}));
     socket!.add(
       jsonEncode(<String, Object?>{'type': 'transcript.final', 'text': ''}),
@@ -322,6 +367,7 @@ void main() {
     expect(audio.operations, <String>['audio', 'segment', 'response']);
     expect(controller.state, VoiceConnectionState.speaking);
     expect(controller.currentResponseId, responseId);
+    await expectIgnoredPunctuation(VoiceConnectionState.speaking);
     expect(
       controller.messages.where((entry) => entry.role == 'human'),
       isEmpty,
@@ -341,14 +387,18 @@ void main() {
       ),
       isTrue,
     );
+    socket!.add(
+      jsonEncode({'type': 'transcript.final', 'text': 'C++ 的 1.5 版本，怎么用？'}),
+    );
+    await waitUntil(
+      () => controller.messages.any((entry) => entry.role == 'human'),
+    );
+    expect(controller.messages.last.text, 'C++ 的 1.5 版本，怎么用？');
 
     socket!.add(jsonEncode(<String, Object?>{'type': 'session.closed'}));
     await waitUntil(
       () => controller.state == VoiceConnectionState.disconnected,
     );
-    controller.dispose();
-    await audio.close();
-    await server.close(force: true);
   });
 
   for (final wakeCase
@@ -361,6 +411,7 @@ void main() {
         (transcript: '小美小美小美', command: '', expected: ''),
         (transcript: ' 小 美，小美、小美，介绍一下你自己', command: null, expected: '介绍一下你自己'),
         (transcript: '小美，小美，小美。', command: null, expected: ''),
+        (transcript: '小美小美。', command: '。', expected: ''),
       ]) {
     test(
       'wake confirmation strips repeated calls: ${wakeCase.transcript}',
@@ -468,6 +519,7 @@ void main() {
         wakeSocket!.add(
           jsonEncode({'type': 'transcript.final', 'text': wakeCase.transcript}),
         );
+        wakeSocket!.add(jsonEncode({'type': 'transcript.final', 'text': '.'}));
         wakeSocket!.add(
           jsonEncode({
             'type': 'wake.accepted',

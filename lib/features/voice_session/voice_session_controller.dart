@@ -484,13 +484,17 @@ class VoiceSessionController extends ChangeNotifier {
           _setState(VoiceConnectionState.listening);
         }
       case 'transcript.partial':
-        _partialTranscript = event['text'] as String? ?? '';
+        final text = event['text'] as String? ?? '';
+        _partialTranscript = _isNonActionableVoiceText(text) ? '' : text;
         notifyListeners();
       case 'transcript.final':
-        final text = event['text'] as String? ?? '';
+        final rawText = event['text'] as String? ?? '';
+        final text = _isNonActionableVoiceText(rawText) ? '' : rawText;
         _partialTranscript = '';
         if (_wakeConfirmationPending) {
-          _pendingWakeTranscript = text.trim();
+          if (text.trim().isNotEmpty) {
+            _pendingWakeTranscript = text.trim();
+          }
         } else if (text.trim().isNotEmpty) {
           _messages.add(ConversationEntry(role: 'human', text: text.trim()));
         }
@@ -881,16 +885,9 @@ class VoiceSessionController extends ChangeNotifier {
 }
 
 bool _isNonActionableVoiceText(String text) {
-  final normalized = text.replaceAll(RegExp(r'[\s，,。！？!?、]+'), '');
-  return const <String>{
-    '嗯',
-    '嗯嗯',
-    '呃',
-    '额',
-    '啊',
-    '呢',
-    '那',
-  }.contains(normalized);
+  final normalized = text.replaceAll(RegExp(r'[\p{P}\s]+', unicode: true), '');
+  return normalized.isEmpty ||
+      const <String>{'嗯', '嗯嗯', '呃', '额', '啊', '呢', '那'}.contains(normalized);
 }
 
 ({double rmsDbfs, double peakDbfs, int clipped}) _measure(Uint8List bytes) {
