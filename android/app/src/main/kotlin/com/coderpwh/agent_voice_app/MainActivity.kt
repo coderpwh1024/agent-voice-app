@@ -278,6 +278,8 @@ private class VoiceAudioEngine(
     private var playbackThread: Thread? = null
     private var monitorThread: Thread? = null
     private var writtenFrames = 0L
+    private var previousPlaybackHead = 0L
+    private var playbackWrapOffset = 0L
     private var audioRouteConfigured = false
     private var previousAudioMode: Int? = null
     private var previousSpeakerphoneOn: Boolean? = null
@@ -295,6 +297,8 @@ private class VoiceAudioEngine(
             commands.clear()
             markers.clear()
             writtenFrames = 0
+            previousPlaybackHead = 0
+            playbackWrapOffset = 0
             if (conversation) {
                 configureAudioRoute()
                 startPlayback()
@@ -458,31 +462,62 @@ private class VoiceAudioEngine(
                 }
                 if (invalidResponses.contains(command.responseId)) continue
                 when (command) {
-                    is PlaybackCommand.Audio -> synchronized(playbackLock) {
+                    is PlaybackCommand.Audio -> {
                         var offset = 0
-                        while (running.get() && offset < command.pcm.size) {
-                            val count = player.write(
-                                command.pcm,
-                                offset,
-                                command.pcm.size - offset,
-                                AudioTrack.WRITE_BLOCKING,
-                            )
-                            if (count <= 0) break
-                            offset += count
-                            writtenFrames += count / 2L
+                        while (running.get() && !invalidResponses.contains(command.responseId) &&
+                            offset < command.pcm.size
+                        ) {
+                            val count = synchronized(playbackLock) {
+                                if (paused.get() || invalidResponses.contains(command.responseId)) {
+                                    0
+                                } else {
+                                    player.write(
+                                        command.pcm,
+                                        offset,
+                                        command.pcm.size - offset,
+                                        AudioTrack.WRITE_NON_BLOCKING,
+                                    ).also { if (it > 0) writtenFrames += it / 2L }
+                                }
+                            }
+                            if (count < 0) {
+                                invalidResponses.add(command.responseId)
+                                commands.removeIf { it.responseId == command.responseId }
+                                markers.removeIf { it.responseId == command.responseId }
+                                mainHandler.post {
+                                    playbackSink?.success(mapOf(
+                                        "type" to "playback.error",
+                                        "responseId" to command.responseId,
+                                        "code" to count,
+                                    ))
+                                }
+                                break
+                            }
+                            if (count == 0) {
+                                try {
+                                    Thread.sleep(5)
+                                } catch (_: InterruptedException) {
+                                    break
+                                }
+                            } else {
+                                offset += count
+                            }
                         }
                     }
-                    is PlaybackCommand.SegmentDone -> markers.add(
-                        PlaybackMarker.Segment(
-                            command.responseId,
-                            command.segmentIndex,
-                            command.samples,
-                            writtenFrames,
-                        ),
-                    )
-                    is PlaybackCommand.ResponseDone -> markers.add(
-                        PlaybackMarker.Response(command.responseId, writtenFrames),
-                    )
+                    is PlaybackCommand.SegmentDone -> synchronized(playbackLock) {
+                        if (!invalidResponses.contains(command.responseId)) {
+                            markers.add(PlaybackMarker.Segment(
+                                command.responseId,
+                                command.segmentIndex,
+                                command.samples,
+                                writtenFrames,
+                            ))
+                        }
+                    }
+                    is PlaybackCommand.ResponseDone -> synchronized(playbackLock) {
+                        if (!invalidResponses.contains(command.responseId)) {
+                            markers.add(PlaybackMarker.Response(command.responseId, writtenFrames))
+                        }
+                    }
                 }
             }
         }
@@ -490,19 +525,23 @@ private class VoiceAudioEngine(
 
     private fun startMonitor() {
         monitorThread = thread(name = "agent-voice-playback-monitor", start = true) {
-            var wrapOffset = 0L
-            var previousRaw = 0L
             while (running.get()) {
-                val player = track
-                if (player != null && player.state == AudioTrack.STATE_INITIALIZED && !paused.get()) {
-                    val raw = player.playbackHeadPosition.toLong() and 0xffffffffL
-                    if (raw < previousRaw) wrapOffset += 1L shl 32
-                    previousRaw = raw
-                    val played = wrapOffset + raw
-                    val ready = markers.filter { it.targetFrame <= played }
-                    ready.forEach { marker ->
-                        if (markers.remove(marker) && !invalidResponses.contains(marker.responseId)) {
-                            emitMarker(marker)
+                synchronized(playbackLock) {
+                    val player = track
+                    if (player != null && player.state == AudioTrack.STATE_INITIALIZED &&
+                        !paused.get()
+                    ) {
+                        val raw = player.playbackHeadPosition.toLong() and 0xffffffffL
+                        if (raw < previousPlaybackHead) playbackWrapOffset += 1L shl 32
+                        previousPlaybackHead = raw
+                        val played = playbackWrapOffset + raw
+                        val ready = markers.filter { it.targetFrame <= played }
+                        ready.forEach { marker ->
+                            if (markers.remove(marker) &&
+                                !invalidResponses.contains(marker.responseId)
+                            ) {
+                                emitMarker(marker)
+                            }
                         }
                     }
                 }
@@ -528,7 +567,11 @@ private class VoiceAudioEngine(
                 "responseId" to marker.responseId,
             )
         }
-        mainHandler.post { playbackSink?.success(event) }
+        mainHandler.post {
+            if (running.get() && !invalidResponses.contains(marker.responseId)) {
+                playbackSink?.success(event)
+            }
+        }
     }
 
     fun enqueue(pcm: ByteArray, responseId: String, segmentIndex: Int) {
@@ -558,18 +601,24 @@ private class VoiceAudioEngine(
             track?.pause()
             track?.flush()
             writtenFrames = track?.playbackHeadPosition?.toLong()?.and(0xffffffffL) ?: 0
+            previousPlaybackHead = writtenFrames
+            playbackWrapOffset = 0
             track?.play()
         }
     }
 
     fun pause() {
-        paused.set(true)
-        track?.pause()
+        synchronized(playbackLock) {
+            paused.set(true)
+            track?.pause()
+        }
     }
 
     fun resume() {
-        paused.set(false)
-        track?.play()
+        synchronized(playbackLock) {
+            paused.set(false)
+            track?.play()
+        }
     }
 
     fun stop() {

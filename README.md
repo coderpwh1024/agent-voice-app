@@ -160,6 +160,8 @@ test/                          协议契约与 Widget 测试
 
 文字增量实时显示，收到并交给原生播放器首包 PCM 后才切换到播报状态。Android 12 及以上请求 40 ms 的 AudioTrack 启动阈值，保留原有播放缓冲容量；旧版 Android 和 iOS 沿用各自系统播放器行为。调试版输出每轮首字到首包接收、原生入队的毫秒耗时，控制器的 `responseLatencyMs` 同时保留后端可选 `latency_ms`（使用 `server_` 前缀）。客户端与服务端时钟分别统计，入队、WebSocket 发送和实际声学出声是不同阶段。
 
+自动能量检测只向后端提示疑似插话，不因外放回声或环境声直接暂停；服务端确认有效新输入后取消旧回答。点击“我要插话”会立即暂停，未确认有效插话时由后端恢复，客户端另有 1 秒恢复兜底。Android 使用非阻塞写入，暂停或缓冲暂满时保留剩余 PCM；取消后重置播放计数，实际播放结束后才发送完成确认。语音合成失败时页面明确提示本轮声音不完整，保留文字。
+
 ## 构建与验证
 
 ```bash
@@ -169,6 +171,8 @@ flutter build apk --debug
 ```
 
 本仓库当前环境的 APK 位于 `build/app/outputs/flutter-apk/app-debug.apk`。
+
+`integration_test/audio_playback_test.dart` 在真机原生播放器上检查暂停期间的 PCM 保留、恢复后的完整时长以及连续取消后的完成时序；测试使用静音数据。可使用 `test_driver/integration_test.dart` 配合 `flutter drive --use-application-binary=<测试APK路径>` 运行，测试 APK 的入口为该集成测试文件，构建号应不低于手机已安装版本。测试后执行 USB 安装脚本恢复正常 App。
 
 iOS 首次构建前需要完成本机 Xcode 初始化：
 

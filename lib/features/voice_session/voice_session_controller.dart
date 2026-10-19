@@ -101,6 +101,8 @@ class VoiceSessionController extends ChangeNotifier {
   final _AudioMetricsAccumulator _metrics = _AudioMetricsAccumulator();
   int _speechFrames = 0;
   bool _speechHintPending = false;
+  Timer? _speechHintResumeTimer;
+  String? _pausedHintResponseId;
   bool _tearingDown = false;
   bool _wakeConfirmationPending = false;
   String? _pendingWakeTranscript;
@@ -404,6 +406,7 @@ class VoiceSessionController extends ChangeNotifier {
       return;
     }
     _invalidResponses.add(responseId);
+    _clearSpeechHintPause();
     await _audio.cancel(responseId);
     _socket!.sendJson(
       clientEvent('response.cancel', <String, Object?>{
@@ -413,12 +416,38 @@ class VoiceSessionController extends ChangeNotifier {
     _setState(VoiceConnectionState.listening);
   }
 
-  Future<void> speechHint() async {
-    if (!isConnected) {
+  Future<void> speechHint({bool pausePlayback = true}) async {
+    final responseId = _currentResponseId;
+    if (!isConnected || responseId == null) {
       return;
     }
-    await _audio.pause();
-    _socket!.sendJson(clientEvent('input.speech_hint'));
+    if (pausePlayback) {
+      await _audio.pause();
+      _clearSpeechHintPause();
+      _pausedHintResponseId = responseId;
+      _speechHintResumeTimer = Timer(const Duration(seconds: 1), () {
+        unawaited(
+          _resumeSpeechHintPlayback(responseId).catchError(_recordError),
+        );
+      });
+    }
+    _socket?.sendJson(clientEvent('input.speech_hint'));
+  }
+
+  void _clearSpeechHintPause() {
+    _speechHintResumeTimer?.cancel();
+    _speechHintResumeTimer = null;
+    _pausedHintResponseId = null;
+  }
+
+  Future<void> _resumeSpeechHintPlayback(String responseId) async {
+    if (_pausedHintResponseId != responseId) return;
+    _clearSpeechHintPause();
+    if (isConnected &&
+        responseId == _currentResponseId &&
+        !_invalidResponses.contains(responseId)) {
+      await _audio.resume();
+    }
   }
 
   void submitApproval(Object? value) {
@@ -559,6 +588,7 @@ class VoiceSessionController extends ChangeNotifier {
         }
       case 'response.cancelled':
         if (responseId != null) {
+          if (_pausedHintResponseId == responseId) _clearSpeechHintPause();
           _invalidResponses.add(responseId);
           await _audio.cancel(responseId);
           if (_currentResponseId == responseId) {
@@ -594,7 +624,7 @@ class VoiceSessionController extends ChangeNotifier {
         if (responseId != null && !_invalidResponses.contains(responseId)) {
           _speechHintPending = false;
           _speechFrames = 0;
-          await _audio.resume();
+          await _resumeSpeechHintPlayback(responseId);
           _setState(
             _responseHasAudio
                 ? VoiceConnectionState.speaking
@@ -630,7 +660,11 @@ class VoiceSessionController extends ChangeNotifier {
         );
         notifyListeners();
       case 'error':
-        _recordError(event['code']?.toString() ?? '未知语音错误');
+        _recordError(
+          event['code'] == 'tts_failed'
+              ? '本轮语音合成未完成，文字已保留，请重试'
+              : event['code']?.toString() ?? '未知语音错误',
+        );
       case 'session.closed':
       case 'socket.closed':
         unawaited(_teardown(sendClose: false));
@@ -747,7 +781,7 @@ class VoiceSessionController extends ChangeNotifier {
     _speechFrames = rmsDbfs >= vad.rmsDbfs ? _speechFrames + 1 : 0;
     if (_speechFrames >= vad.speechFrames && !_speechHintPending) {
       _speechHintPending = true;
-      unawaited(speechHint());
+      unawaited(speechHint(pausePlayback: false));
     }
   }
 
@@ -777,6 +811,11 @@ class VoiceSessionController extends ChangeNotifier {
       return;
     }
     switch (event['type']) {
+      case 'playback.error':
+        _recordError('手机音频播放失败，请重新连接语音会话');
+        if (_currentResponseId == responseId) {
+          unawaited(cancelCurrent());
+        }
       case 'segment.completed':
         _socket!.sendJson(
           clientEvent('playback.progress', <String, Object?>{
@@ -793,10 +832,11 @@ class VoiceSessionController extends ChangeNotifier {
         );
         if (_currentResponseId == responseId) {
           _currentResponseId = null;
+          _clearSpeechHintPause();
+          _speechHintPending = false;
+          _speechFrames = 0;
+          _setState(VoiceConnectionState.listening);
         }
-        _speechHintPending = false;
-        _speechFrames = 0;
-        _setState(VoiceConnectionState.listening);
     }
   }
 
@@ -806,6 +846,7 @@ class VoiceSessionController extends ChangeNotifier {
   }) async {
     if (_tearingDown) return;
     _tearingDown = true;
+    _clearSpeechHintPause();
     try {
       final socket = _socket;
       final oldSession = _session;

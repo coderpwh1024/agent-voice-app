@@ -19,6 +19,8 @@ class FakeAudioBridge implements AudioBridge {
   final List<String> completedResponses = <String>[];
   final List<String> operations = <String>[];
   final List<AudioCaptureMode> startedModes = <AudioCaptureMode>[];
+  int pauseCalls = 0;
+  int resumeCalls = 0;
 
   @override
   Stream<Uint8List> get microphoneFrames => microphone.stream;
@@ -54,13 +56,13 @@ class FakeAudioBridge implements AudioBridge {
   }
 
   @override
-  Future<void> pause() async {}
+  Future<void> pause() async => pauseCalls++;
 
   @override
   Future<bool> requestMicrophonePermission() async => true;
 
   @override
-  Future<void> resume() async {}
+  Future<void> resume() async => resumeCalls++;
 
   @override
   Future<AudioProcessingState> start(AudioCaptureMode mode) async {
@@ -300,6 +302,11 @@ void main() {
           'protocol_version': 1,
           'voices': <String>['Cherry'],
           'default_voice': 'Cherry',
+          'client_vad': <String, Object?>{
+            'enabled': true,
+            'rms_dbfs': -42,
+            'speech_frames': 3,
+          },
           'agents': <Object?>[],
         },
         ('POST', '/voice/sessions') => <String, Object?>{
@@ -445,11 +452,40 @@ void main() {
     expect(audio.operations, <String>['audio', 'segment', 'response']);
     expect(controller.state, VoiceConnectionState.speaking);
     expect(controller.currentResponseId, responseId);
+    final loudFrame = Uint8List(1280);
+    final samples = ByteData.sublistView(loudFrame);
+    for (var index = 0; index < 640; index++) {
+      samples.setInt16(index * 2, 3000, Endian.little);
+    }
+    for (var index = 0; index < 3; index++) {
+      audio.microphone.add(loudFrame);
+    }
+    await waitUntil(
+      () => clientEvents.any((event) => event['type'] == 'input.speech_hint'),
+    );
+    expect(
+      audio.pauseCalls,
+      0,
+      reason: 'RMS alone must not interrupt playback',
+    );
+    await controller.speechHint();
+    expect(audio.pauseCalls, 1, reason: 'An explicit interruption pauses now');
+    final resumesBeforeTimeout = audio.resumeCalls;
+    await Future<void>.delayed(const Duration(milliseconds: 1100));
+    expect(audio.resumeCalls, greaterThan(resumesBeforeTimeout));
     await expectIgnoredPunctuation(VoiceConnectionState.speaking);
     expect(
       controller.messages.where((entry) => entry.role == 'human'),
       isEmpty,
     );
+
+    audio.playback.add(<String, dynamic>{
+      'type': 'response.finished',
+      'responseId': '99999999-8888-4777-8666-555555555555',
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    expect(controller.state, VoiceConnectionState.speaking);
+    expect(controller.currentResponseId, responseId);
 
     audio.playback.add(<String, dynamic>{
       'type': 'response.finished',
