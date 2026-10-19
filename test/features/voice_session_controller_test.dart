@@ -194,6 +194,84 @@ void main() {
     }
   });
 
+  test(
+    'refreshes model voices before creating a session after an upgrade',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      var reads = 0;
+      String? submittedVoice;
+      server.listen((request) async {
+        if (WebSocketTransformer.isUpgradeRequest(request)) {
+          final socket = await WebSocketTransformer.upgrade(request);
+          socket.listen((message) {
+            final event = jsonDecode(message as String) as Map<String, dynamic>;
+            if (event['type'] == 'session.configure') {
+              socket.add(
+                jsonEncode({
+                  'type': 'session.ready',
+                  'connection_id': '00112233-4455-6677-8899-aabbccddeeff',
+                }),
+              );
+            }
+          });
+          return;
+        }
+        request.response.headers.contentType = ContentType.json;
+        Map<String, Object?> data;
+        if (request.uri.path == '/voice/capabilities') {
+          reads += 1;
+          final voice = reads == 1 ? 'Cherry' : 'longanhuan_v3.1';
+          data = {
+            'enabled': true,
+            'protocol_version': 1,
+            'voices': [voice],
+            'default_voice': voice,
+          };
+        } else if (request.method == 'POST') {
+          final body = jsonDecode(
+            await utf8.decoder.bind(request).join(),
+          ) as Map<String, dynamic>;
+          submittedVoice = body['voice'] as String;
+          data = {
+            'session_id': '11111111-2222-4333-8444-555555555555',
+            'thread_id': 'thread-1',
+            'agent_id': 'chatbot',
+            'voice': submittedVoice,
+            'expires_at': '2099-01-01T00:00:00Z',
+          };
+        } else {
+          data = {'status': 'closing'};
+        }
+        request.response.write(
+          jsonEncode({'code': 200, 'message': 'success', 'data': data}),
+        );
+        await request.response.close();
+      });
+      final audio = FakeAudioBridge();
+      final controller = VoiceSessionController(
+        config: AppConfig(
+          baseUrl: 'http://${server.address.host}:${server.port}',
+          accessToken: 'test-token',
+          userId: '42',
+        ),
+        audio: audio,
+      );
+      try {
+        await controller.loadCapabilities();
+        expect(controller.capabilities!.defaultVoice, 'Cherry');
+        await controller.connect(agentId: 'chatbot', voice: 'Cherry');
+        expect(reads, 2);
+        expect(submittedVoice, 'longanhuan_v3.1');
+        expect(controller.session!.voice, 'longanhuan_v3.1');
+        expect(controller.isConnected, isTrue);
+      } finally {
+        controller.dispose();
+        await audio.close();
+        await server.close(force: true);
+      }
+    },
+  );
+
   test('waits for native playback before returning to listening', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final clientEvents = <Map<String, dynamic>>[];

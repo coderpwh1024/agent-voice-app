@@ -49,13 +49,24 @@ fi
 
 base_url="http://127.0.0.1:$backend_port"
 apk_path="$project_dir/build/app/outputs/flutter-apk/app-debug.apk"
+project_build_number=$(sed -n 's/^version: .*+\([0-9][0-9]*\).*/\1/p' "$project_dir/pubspec.yaml" | head -1)
+installed_build_number=$(
+  "$adb_bin" -s "$device_id" shell dumpsys package "$package_name" |
+    sed -n 's/.*versionCode=\([0-9][0-9]*\).*/\1/p' |
+    head -1
+)
+build_number=${project_build_number:-1}
+if [[ -n "$installed_build_number" && "$installed_build_number" -ge "$build_number" ]]; then
+  build_number=$((installed_build_number + 1))
+fi
 
 cd "$project_dir"
-"$flutter_bin" build apk --debug --dart-define="API_BASE_URL=$base_url"
+"$flutter_bin" build apk --debug --build-number="$build_number" --dart-define="API_BASE_URL=$base_url"
 "$adb_bin" -s "$device_id" install -r "$apk_path"
 "$adb_bin" -s "$device_id" reverse "tcp:$backend_port" "tcp:$backend_port"
 "$adb_bin" -s "$device_id" shell am force-stop "$package_name"
 "$adb_bin" -s "$device_id" shell am start -n "$package_name/.MainActivity"
 
 echo "Installed $apk_path on $device_id"
+echo "Build number: $build_number"
 echo "Backend route: device $base_url -> host 127.0.0.1:$backend_port"

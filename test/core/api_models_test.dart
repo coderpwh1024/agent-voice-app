@@ -2,6 +2,63 @@ import 'package:agent_voice_app/core/api/api_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+    'model upgrades replace stale voices without changing PCM transport',
+    () {
+      final capabilities = VoiceCapabilities.fromJson({
+        'stt_model': 'qwen-audio-3.1-asr-flash-message',
+        'tts_model': 'qwen-audio-3.1-tts-flash',
+        'voice_catalog_model': 'qwen-audio-3.1-tts-flash',
+        'voices': ['longanhuan_v3.1', 'longanlingxin_v3.1'],
+        'default_voice': 'longanhuan_v3.1',
+        'input_format': 'pcm16_16000_mono',
+        'output_format': 'pcm16_24000_mono',
+      });
+      expect(capabilities.selectVoice('Cherry'), 'longanhuan_v3.1');
+      expect(
+        capabilities.selectVoice('longanlingxin_v3.1'),
+        'longanlingxin_v3.1',
+      );
+      expect(capabilities.hasCompatibleAudioFormats, isTrue);
+      expect(capabilities.hasMatchingVoiceCatalog, isTrue);
+      expect(capabilities.sttModel, 'qwen-audio-3.1-asr-flash-message');
+    },
+  );
+
+  test('detects mismatched catalogs and incompatible output audio', () {
+    final capabilities = VoiceCapabilities.fromJson({
+      'tts_model': 'new-model',
+      'voice_catalog_model': 'old-model',
+      'output_format': 'mp3',
+    });
+    expect(capabilities.hasCompatibleAudioFormats, isFalse);
+    expect(capabilities.hasMatchingVoiceCatalog, isFalse);
+    expect(capabilities.selectVoice('Cherry'), isNull);
+    expect(VoiceCapabilities.fromJson({}).hasCompatibleAudioFormats, isTrue);
+    expect(VoiceCapabilities.fromJson({}).hasMatchingVoiceCatalog, isTrue);
+  });
+
+  test('Chinese chat only offers voices supporting Chinese', () {
+    final capabilities = VoiceCapabilities.fromJson({
+      'voices': ['english-only', 'chinese'],
+      'default_voice': 'english-only',
+      'voice_options': [
+        {
+          'id': 'english-only',
+          'name': '英语音色',
+          'languages': ['en'],
+        },
+        {
+          'id': 'chinese',
+          'name': '中文音色',
+          'languages': ['zh'],
+        },
+      ],
+    });
+    expect(capabilities.voices, ['chinese']);
+    expect(capabilities.defaultVoice, 'chinese');
+  });
+
   test('honors backend defaults and never remaps an existing thread', () {
     final capabilities = VoiceCapabilities.fromJson({
       'default_agent': 'mem0-chatbot',

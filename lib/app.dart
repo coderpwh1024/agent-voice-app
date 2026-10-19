@@ -120,7 +120,14 @@ class _AgentVoiceAppState extends State<AgentVoiceApp> {
       return;
     }
     if (saved != null) {
-      _controller.updateConfig(saved.config);
+      const packagedBaseUrl = String.fromEnvironment('API_BASE_URL');
+      final restoredConfig = packagedBaseUrl.isEmpty
+          ? saved.config
+          : saved.config.copyWith(baseUrl: packagedBaseUrl);
+      _controller.updateConfig(restoredConfig);
+      if (packagedBaseUrl.isNotEmpty && packagedBaseUrl != saved.config.baseUrl) {
+        unawaited(_persistBaseUrl(packagedBaseUrl));
+      }
       _currentUser = saved.user;
       unawaited(_loadCapabilities());
     }

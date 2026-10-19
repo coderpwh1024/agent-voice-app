@@ -61,6 +61,10 @@ Content-Type: application/json
 
 ## 运行
 
+语音模型与音色由后端的 Nacos 配置统一维护。App 在每次建立语音会话前刷新 `/voice/capabilities`，使用当前 TTS 模型的音色目录；模型升级导致旧音色不可用时，自动改用当前默认音色，中文聊天仅显示支持中文的音色。App 会校验目录所属模型和 PCM 格式，不把供应商特有的模型协议写入录音或播放层。
+
+后端支持的 Realtime / Inference 模型升级仍使用 16 kHz 输入、24 kHz 输出和现有 VCE1 帧。模型或音色配置发布后先重启后端，再重新连接 App；离线模型、8 kHz 专用模型或全新事件协议需要先在后端增加适配。详见后端仓库的 `docs/Voice_API.md`。
+
 ```bash
 flutter pub get
 flutter analyze

@@ -89,6 +89,7 @@ class VoiceOption {
     required this.id,
     required this.name,
     this.description = '',
+    this.languages = const ['zh', 'en'],
   });
 
   factory VoiceOption.fromJson(Map<String, dynamic> json) {
@@ -98,6 +99,9 @@ class VoiceOption {
       id: id,
       name: name.isEmpty ? id : name,
       description: json['description']?.toString().trim() ?? '',
+      languages: (json['languages'] as List<dynamic>? ?? const ['zh', 'en'])
+          .map((item) => item.toString())
+          .toList(growable: false),
     );
   }
 
@@ -106,6 +110,7 @@ class VoiceOption {
   final String id;
   final String name;
   final String description;
+  final List<String> languages;
 
   String get displayName => name == id ? id : '$name · $id';
 }
@@ -121,6 +126,11 @@ class VoiceCapabilities {
     required this.clientVad,
     required this.audioMetricsSeconds,
     this.defaultAgent,
+    this.sttModel,
+    this.ttsModel,
+    this.voiceCatalogModel,
+    this.inputFormat = 'pcm16_16000_mono',
+    this.outputFormat = 'pcm16_24000_mono',
   });
 
   factory VoiceCapabilities.fromJson(Map<String, dynamic> json) {
@@ -145,6 +155,7 @@ class VoiceCapabilities {
     final voiceOptions = voiceIds
         .where(seenVoiceIds.add)
         .map((id) => metadataById[id] ?? VoiceOption.legacy(id))
+        .where((option) => option.languages.contains('zh'))
         .toList(growable: false);
     final configuredDefault = json['default_voice']?.toString().trim();
     final defaultVoice =
@@ -168,6 +179,11 @@ class VoiceCapabilities {
       ),
       audioMetricsSeconds: json['audio_metrics_seconds'] as int? ?? 5,
       defaultAgent: json['default_agent'] as String?,
+      sttModel: json['stt_model'] as String?,
+      ttsModel: json['tts_model'] as String?,
+      voiceCatalogModel: json['voice_catalog_model'] as String?,
+      inputFormat: json['input_format'] as String? ?? 'pcm16_16000_mono',
+      outputFormat: json['output_format'] as String? ?? 'pcm16_24000_mono',
     );
   }
 
@@ -180,6 +196,22 @@ class VoiceCapabilities {
   final ClientVadCapability clientVad;
   final int audioMetricsSeconds;
   final String? defaultAgent;
+  final String? sttModel;
+  final String? ttsModel;
+  final String? voiceCatalogModel;
+  final String inputFormat;
+  final String outputFormat;
+
+  String? selectVoice(String? selectedId) =>
+      voices.contains(selectedId) ? selectedId : defaultVoice;
+
+  bool get hasCompatibleAudioFormats =>
+      inputFormat == 'pcm16_16000_mono' && outputFormat == 'pcm16_24000_mono';
+
+  bool get hasMatchingVoiceCatalog =>
+      voiceCatalogModel == null ||
+      ttsModel == null ||
+      voiceCatalogModel == ttsModel;
 
   String? get defaultAgentId {
     if (agents.any((agent) => agent.id == defaultAgent)) return defaultAgent;

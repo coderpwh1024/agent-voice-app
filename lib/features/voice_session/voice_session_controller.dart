@@ -149,6 +149,12 @@ class VoiceSessionController extends ChangeNotifier {
         );
       }
       _capabilities = value;
+      if (!value.hasCompatibleAudioFormats) {
+        throw const ApiException(0, '后端音频格式与当前 App 不兼容，请升级 App');
+      }
+      if (!value.hasMatchingVoiceCatalog || value.voiceOptions.isEmpty) {
+        throw const ApiException(503, '当前语音模型的音色配置不可用，请检查后端配置');
+      }
       _error = null;
     } catch (error) {
       _recordError(error);
@@ -280,9 +286,11 @@ class VoiceSessionController extends ChangeNotifier {
     _setState(VoiceConnectionState.connecting);
     _error = null;
     try {
-      if (_capabilities == null) {
-        await loadCapabilities();
-        _setState(VoiceConnectionState.connecting);
+      await loadCapabilities();
+      _setState(VoiceConnectionState.connecting);
+      final selectedVoice = _capabilities!.selectVoice(voice);
+      if (selectedVoice == null) {
+        throw const ApiException(503, '当前语音模型没有可用音色');
       }
       final granted = await _audio.requestMicrophonePermission();
       if (!granted) {
@@ -290,7 +298,7 @@ class VoiceSessionController extends ChangeNotifier {
       }
       _session = await _api.createVoiceSession(
         agentId: agentId,
-        voice: voice,
+        voice: selectedVoice,
         threadId: threadId,
         activation: wakeActivation ? 'wake_word' : 'tap',
         wakeWord: wakeActivation ? _capabilities!.wakeWord.keyword : null,

@@ -1133,6 +1133,7 @@ class _ConversationPreferences extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
+                key: ValueKey('${capabilities?.ttsModel}:$selectedVoice'),
                 isExpanded: true,
                 initialValue: selectedVoice,
                 decoration: const InputDecoration(
