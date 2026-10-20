@@ -19,6 +19,7 @@ class FakeAudioBridge implements AudioBridge {
   final List<String> completedResponses = <String>[];
   final List<String> operations = <String>[];
   final List<AudioCaptureMode> startedModes = <AudioCaptureMode>[];
+  Future<void> Function()? onPermissionRequest;
   int pauseCalls = 0;
   int resumeCalls = 0;
 
@@ -59,7 +60,10 @@ class FakeAudioBridge implements AudioBridge {
   Future<void> pause() async => pauseCalls++;
 
   @override
-  Future<bool> requestMicrophonePermission() async => true;
+  Future<bool> requestMicrophonePermission() async {
+    await onPermissionRequest?.call();
+    return true;
+  }
 
   @override
   Future<void> resume() async => resumeCalls++;
@@ -89,6 +93,7 @@ class FakeWakeWordDetector implements WakeWordDetector {
   final StreamController<WakeDetection> controller =
       StreamController<WakeDetection>.broadcast();
   final List<Uint8List> frames = <Uint8List>[];
+  final List<WakeWordConfig> configs = <WakeWordConfig>[];
 
   @override
   Stream<WakeDetection> get detections => controller.stream;
@@ -97,7 +102,9 @@ class FakeWakeWordDetector implements WakeWordDetector {
   void addPcm(Uint8List pcm) => frames.add(Uint8List.fromList(pcm));
 
   @override
-  Future<void> initialize(WakeWordConfig config) async {}
+  Future<void> initialize(WakeWordConfig config) async {
+    configs.add(config);
+  }
 
   @override
   void reset() {}
@@ -532,11 +539,17 @@ void main() {
       () async {
         final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
         final createdBodies = <Map<String, dynamic>>[];
+        final receivedPcm = <int>[];
+        var capabilityReads = 0;
         WebSocket? wakeSocket;
         server.listen((request) async {
           if (WebSocketTransformer.isUpgradeRequest(request)) {
             wakeSocket = await WebSocketTransformer.upgrade(request);
-            wakeSocket!.listen((_) {});
+            wakeSocket!.listen((message) {
+              if (message is List<int>) {
+                receivedPcm.addAll(message.skip(audioHeaderBytes));
+              }
+            });
             await Future<void>.delayed(const Duration(milliseconds: 10));
             wakeSocket!.add(
               jsonEncode(<String, Object?>{
@@ -546,6 +559,7 @@ void main() {
             );
             return;
           }
+          if (request.uri.path == '/voice/capabilities') capabilityReads++;
           if (request.method == 'POST') {
             createdBodies.add(
               jsonDecode(await utf8.decoder.bind(request).join())
@@ -563,9 +577,9 @@ void main() {
                 'enabled': true,
                 'keyword': '小美小美',
                 'confirm_with_asr': true,
-                'pre_roll_ms': 1200,
-                'kws_score': 1.0,
-                'kws_threshold': 0.5,
+                'pre_roll_ms': 4000,
+                'kws_score': capabilityReads == 1 ? 1.0 : 1.5,
+                'kws_threshold': capabilityReads == 1 ? 0.5 : 0.25,
               },
               'client_vad': <String, Object?>{
                 'enabled': true,
@@ -612,8 +626,23 @@ void main() {
 
         await controller.loadCapabilities();
         await controller.enableWakeWord(agentId: 'chatbot', voice: 'Cherry');
-        audio.microphone.add(Uint8List(640));
-        await waitUntil(() => wake.frames.isNotEmpty);
+        for (var index = 0; index < 120; index++) {
+          audio.microphone.add(Uint8List(1280)..fillRange(0, 1280, index));
+        }
+        await waitUntil(() => wake.frames.length == 120);
+        await controller.loadCapabilities();
+        expect(
+          controller.isWakeListening,
+          isTrue,
+          reason: 'Refreshing capabilities must preserve armed wake listening',
+        );
+        expect(wake.configs.first.score, 1);
+        expect(wake.configs.last.score, 1.5);
+        expect(wake.configs.last.threshold, .25);
+        audio.onPermissionRequest = () async {
+          audio.microphone.add(Uint8List(1280)..fillRange(0, 1280, 250));
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        };
         wake.trigger();
         wake.trigger();
         wake.trigger();
@@ -621,14 +650,20 @@ void main() {
           () => controller.state == VoiceConnectionState.listening,
         );
 
+        expect(controller.isWakeActivating, isTrue);
         expect(audio.startedModes, <AudioCaptureMode>[
           AudioCaptureMode.standby,
           AudioCaptureMode.conversation,
         ]);
+        expect(createdBodies.single['pre_roll_samples'], 64000);
+        await waitUntil(() => receivedPcm.length >= 129280);
+        expect(receivedPcm.length, 129280);
+        expect(receivedPcm.take(1280), everyElement(20));
+        expect(receivedPcm.skip(99 * 1280).take(1280), everyElement(119));
+        expect(receivedPcm.skip(100 * 1280), everyElement(250));
         expect(createdBodies.single['activation'], 'wake_word');
         expect(createdBodies.single['wake_word'], '小美小美');
         expect(createdBodies.single['wake_engine'], 'sherpa-onnx-1.13.8');
-        expect(createdBodies.single['pre_roll_samples'], 320);
 
         wakeSocket!.add(
           jsonEncode({'type': 'transcript.final', 'text': wakeCase.transcript}),
@@ -671,6 +706,7 @@ void main() {
         );
         expect(controller.messages.length, wakeCase.expected.isEmpty ? 1 : 2);
         expect(controller.messages.last.text, '我在，小美随时为你服务。');
+        expect(controller.isWakeActivating, isFalse);
         expect(audio.operations, contains('audio'));
 
         wakeSocket!.add(jsonEncode(<String, Object?>{'type': 'wake.rejected'}));

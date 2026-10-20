@@ -488,7 +488,9 @@ class _VoiceHomePageState extends State<VoiceHomePage>
     final availableHeight =
         MediaQuery.sizeOf(context).height -
         MediaQuery.viewInsetsOf(context).bottom;
-    final status = _statusLabel(controller.state, capabilities);
+    final status = controller.isWakeActivating
+        ? (connected ? '听到了，正在确认' : '听到了，正在连接')
+        : _statusLabel(controller.state, capabilities);
     final color = _statusColor(controller.state);
     return Scaffold(
       backgroundColor: dark ? const Color(0xff171412) : const Color(0xfffbf8f4),
@@ -667,7 +669,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
                                     SliverToBoxAdapter(
                                       child: _WelcomeCard(
                                         state: controller.state,
-                                        capabilities: capabilities,
+                                        status: status,
                                       ),
                                     ),
                                     SliverToBoxAdapter(
@@ -836,7 +838,7 @@ String _statusLabel(
   VoiceCapabilities? capabilities,
 ) => switch (state) {
   VoiceConnectionState.disconnected => capabilities == null ? '等待连接' : '随时聊一聊',
-  VoiceConnectionState.wakeListening => '正在等待你的呼唤',
+  VoiceConnectionState.wakeListening => '说“小美小美”唤醒我',
   VoiceConnectionState.connecting => '正在连接',
   VoiceConnectionState.ready => '已经准备好',
   VoiceConnectionState.listening => '正在认真听',
@@ -985,9 +987,9 @@ class _VoiceControls extends StatelessWidget {
 }
 
 class _WelcomeCard extends StatelessWidget {
-  const _WelcomeCard({required this.state, required this.capabilities});
+  const _WelcomeCard({required this.state, required this.status});
   final VoiceConnectionState state;
-  final VoiceCapabilities? capabilities;
+  final String status;
 
   @override
   Widget build(BuildContext context) {
@@ -1023,11 +1025,7 @@ class _WelcomeCard extends StatelessWidget {
             style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
           ),
           const SizedBox(height: 16),
-          _StatusPill(
-            label: _statusLabel(state, capabilities),
-            color: _statusColor(state),
-            dark: dark,
-          ),
+          _StatusPill(label: status, color: _statusColor(state), dark: dark),
         ],
       ),
     );

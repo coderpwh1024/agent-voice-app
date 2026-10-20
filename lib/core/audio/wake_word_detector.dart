@@ -54,27 +54,42 @@ class SherpaWakeWordDetector implements WakeWordDetector {
   ReceivePort? _errors;
   Isolate? _isolate;
   SendPort? _commands;
+  WakeWordConfig? _activeConfig;
+  Completer<void>? _stopped;
+  Future<void> _lifecycle = Future<void>.value();
+  bool _disposed = false;
 
   @override
   Stream<WakeDetection> get detections => _detections.stream;
 
   @override
-  Future<void> initialize(WakeWordConfig config) async {
+  Future<void> initialize(WakeWordConfig config) {
+    final operation = _lifecycle.then((_) => _initialize(config));
+    _lifecycle = operation.catchError((Object _) {});
+    return operation;
+  }
+
+  Future<void> _initialize(WakeWordConfig config) async {
+    if (_disposed) throw StateError('唤醒引擎已关闭');
     final keyword = normalizeWakeKeyword(config.keyword);
     if (keyword != supportedKeyword && keyword != '小美') {
       throw UnsupportedError(
         '当前离线模型仅支持唤醒词“$supportedKeyword”，后端下发的是“${config.keyword}”',
       );
     }
-    if (_commands != null) {
+    if (_commands != null &&
+        _activeConfig?.score == config.score &&
+        _activeConfig?.threshold == config.threshold) {
       return;
     }
+    await _stopWorker();
     final paths = await _materializeModel();
     final ready = Completer<void>();
     final results = ReceivePort();
     final errors = ReceivePort();
     _results = results;
     _errors = errors;
+    _stopped = Completer<void>();
     results.listen((dynamic message) {
       if (message is! Map) {
         return;
@@ -82,21 +97,28 @@ class SherpaWakeWordDetector implements WakeWordDetector {
       switch (message['type']) {
         case 'ready':
           _commands = message['port'] as SendPort;
+          _activeConfig = config;
           if (!ready.isCompleted) {
             ready.complete();
           }
         case 'detected':
           _detections.add(WakeDetection(keyword: message['keyword'] as String));
         case 'error':
+          _commands = null;
+          _activeConfig = null;
           final error = StateError(message['message'] as String);
           if (!ready.isCompleted) {
             ready.completeError(error);
           } else {
             _detections.addError(error);
           }
+        case 'stopped':
+          if (!_stopped!.isCompleted) _stopped!.complete();
       }
     });
     errors.listen((dynamic error) {
+      _commands = null;
+      _activeConfig = null;
       final value = StateError('唤醒引擎异常：$error');
       if (!ready.isCompleted) {
         ready.completeError(value);
@@ -104,22 +126,27 @@ class SherpaWakeWordDetector implements WakeWordDetector {
         _detections.addError(value);
       }
     });
-    _isolate = await Isolate.spawn<Map<String, Object>>(
-      _wakeWordWorker,
-      <String, Object>{
-        'result_port': results.sendPort,
-        'encoder': paths['encoder.int8.onnx']!,
-        'decoder': paths['decoder.int8.onnx']!,
-        'joiner': paths['joiner.int8.onnx']!,
-        'tokens': paths['tokens.txt']!,
-        'keywords': paths['keywords.txt']!,
-        'score': config.score,
-        'threshold': config.threshold,
-      },
-      onError: errors.sendPort,
-      debugName: 'agent-voice-kws',
-    );
-    await ready.future.timeout(const Duration(seconds: 20));
+    try {
+      _isolate = await Isolate.spawn<Map<String, Object>>(
+        _wakeWordWorker,
+        <String, Object>{
+          'result_port': results.sendPort,
+          'encoder': paths['encoder.int8.onnx']!,
+          'decoder': paths['decoder.int8.onnx']!,
+          'joiner': paths['joiner.int8.onnx']!,
+          'tokens': paths['tokens.txt']!,
+          'keywords': paths['keywords.txt']!,
+          'score': config.score,
+          'threshold': config.threshold,
+        },
+        onError: errors.sendPort,
+        debugName: 'agent-voice-kws',
+      );
+      await ready.future.timeout(const Duration(seconds: 20));
+    } catch (_) {
+      await _stopWorker();
+      rethrow;
+    }
   }
 
   Future<Map<String, String>> _materializeModel() async {
@@ -162,17 +189,48 @@ class SherpaWakeWordDetector implements WakeWordDetector {
     _commands?.send(<String, Object>{'type': 'reset'});
   }
 
+  /// Wait for queued PCM to be decoded without ending the live audio stream.
+  Future<void> flushPendingAudio() async {
+    final commands = _commands;
+    if (commands == null) throw StateError('唤醒引擎未就绪');
+    final reply = ReceivePort();
+    try {
+      commands.send(<String, Object>{
+        'type': 'barrier',
+        'reply': reply.sendPort,
+      });
+      await reply.first.timeout(const Duration(seconds: 8));
+    } finally {
+      reply.close();
+    }
+  }
+
   @override
   Future<void> dispose() async {
-    _commands?.send(<String, Object>{'type': 'stop'});
+    _disposed = true;
+    await _lifecycle;
+    await _stopWorker();
+    await _detections.close();
+  }
+
+  Future<void> _stopWorker() async {
+    final commands = _commands;
+    if (commands != null) {
+      commands.send(<String, Object>{'type': 'stop'});
+      await _stopped!.future.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () {},
+      );
+    }
     _commands = null;
+    _activeConfig = null;
     _isolate?.kill(priority: Isolate.beforeNextEvent);
     _isolate = null;
     _results?.close();
     _errors?.close();
     _results = null;
     _errors = null;
-    await _detections.close();
+    _stopped = null;
   }
 }
 
@@ -197,7 +255,7 @@ void _wakeWordWorker(Map<String, Object> arguments) {
           numThreads: 1,
           debug: false,
         ),
-        maxActivePaths: 4,
+        maxActivePaths: 8,
         numTrailingBlanks: 1,
         keywordsScore: arguments['score']! as double,
         keywordsThreshold: arguments['threshold']! as double,
@@ -210,6 +268,8 @@ void _wakeWordWorker(Map<String, Object> arguments) {
       'port': commands.sendPort,
     });
   } catch (error) {
+    stream?.free();
+    spotter?.free();
     resultPort.send(<String, Object>{
       'type': 'error',
       'message': error.toString(),
@@ -218,7 +278,7 @@ void _wakeWordWorker(Map<String, Object> arguments) {
     return;
   }
   final activeSpotter = spotter;
-  final activeStream = stream;
+  var activeStream = stream;
   var detected = false;
 
   commands.listen((dynamic raw) {
@@ -247,21 +307,27 @@ void _wakeWordWorker(Map<String, Object> arguments) {
                 'type': 'detected',
                 'keyword': result.keyword,
               });
-              activeSpotter.reset(activeStream);
               break;
             }
           }
         case 'reset':
-          activeSpotter.reset(activeStream);
+          // Sherpa reset retains feature history and pending lookahead audio.
+          activeStream.free();
+          activeStream = activeSpotter.createStream();
           detected = false;
+        case 'barrier':
+          (raw['reply'] as SendPort).send(true);
         case 'stop':
           activeStream.free();
           activeSpotter.free();
           commands.close();
-          Isolate.exit();
+          Isolate.exit(resultPort, <String, Object>{'type': 'stopped'});
       }
     } catch (error) {
-      resultPort.send(<String, Object>{
+      activeStream.free();
+      activeSpotter.free();
+      commands.close();
+      Isolate.exit(resultPort, <String, Object>{
         'type': 'error',
         'message': error.toString(),
       });

@@ -252,9 +252,9 @@ class WakeWordCapability {
         enabled: json['enabled'] as bool? ?? false,
         keyword: json['keyword']?.toString() ?? '小美小美',
         confirmWithAsr: json['confirm_with_asr'] as bool? ?? true,
-        preRollMs: json['pre_roll_ms'] as int? ?? 2200,
-        score: (json['kws_score'] as num?)?.toDouble() ?? 1,
-        threshold: (json['kws_threshold'] as num?)?.toDouble() ?? 0.5,
+        preRollMs: json['pre_roll_ms'] as int? ?? 4000,
+        score: (json['kws_score'] as num?)?.toDouble() ?? 1.5,
+        threshold: (json['kws_threshold'] as num?)?.toDouble() ?? 0.25,
       );
 
   final bool enabled;

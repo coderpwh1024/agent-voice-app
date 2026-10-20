@@ -20,14 +20,14 @@
 - 最近 30 天聊天记录：按 UTC 日期归档、切换助手查询、分会话查看当天消息，以及继续历史对话
 - Android `VOICE_COMMUNICATION`、`AcousticEchoCanceler`、`NoiseSuppressor`
 - iOS `AVAudioSession.voiceChat`、Voice Processing 与系统音频转换
-- sherpa-onnx 离线中文唤醒词“小美小美”，默认带 2.2 秒前滚音频
+- sherpa-onnx 离线中文唤醒词“小美小美”，默认带 4 秒前滚音频
 - 唤醒后的百炼 ASR 二次确认，误唤醒自动关闭并返回待机
 - 确认唤醒后按所选音色主动播报“我在，小美随时为你服务。”；紧接问题时继续回答
 - 本地能量 VAD 自动插话，以及 AEC、降噪、音量和削波质量上报
 
 唤醒目前是 App 前台待机能力：进入首页后默认启动“小美小美”离线关键词检测，命中后才建立网络语音会话，无需手动打开开关。可连读“小美小美”，也可短暂停顿喊“小美，小美”，连续呼喊三个或更多同样兼容；单个“小美”不作为完整唤醒词。重复呼喊只建立一次连接，后端剥离全部开头呼喊，并兼容 ASR 把两声拆成两段。默认 10 秒内未确认有效唤醒则关闭会话并返回待机；确认后仅呼喊会固定应答，不调用聊天模型。
 
-本次需要同时更新 App 与相邻 `agent-service-toolkit` 后端。后端 Nacos 配置建议使用 `voice.wake.word: 小美小美`、`pre_roll_ms: 2200`，可通过 `greeting` 自定义应答和 `confirm_seconds` 调整确认超时。旧的 `word: 小美` 自动归一为双声唤醒；已显式配置的前滚长度仍以配置值为准。
+本次需要同时更新 App 与相邻 `agent-service-toolkit` 后端。后端 Nacos 配置建议使用 `voice.wake.word: 小美小美`、`pre_roll_ms: 4000`，可通过 `greeting` 自定义应答和 `confirm_seconds` 调整确认超时。旧的 `word: 小美` 自动归一为双声唤醒；已显式配置的旧参数不会自动覆盖，需同步更新为 `pre_roll_ms: 4000`、`kws_score: 1.5`、`kws_threshold: 0.25`。
 
 应用进入系统挂起状态或被用户结束后不承诺继续唤醒；Android 后台前台服务与 iOS 后台录音需要单独的产品权限和上架策略。AEC、蓝牙/来电切换、双声唤醒的语速/间隔、误唤醒率和插话效果仍必须在目标真机上验收。
 
@@ -183,3 +183,26 @@ flutter build ios --debug --no-codesign
 ```
 
 真机至少验证：外放时识别人声、停止后 200 ms 内静音、连续插话不恢复旧音频、断网重连、耳机/蓝牙切换、来电中断、30 分钟/50 轮资源回收。App 已实现协议与端侧隔离机制，但这些硬件指标不能由模拟器或单元测试替代。
+
+## 唤醒回归验证
+
+本次默认 KWS 使用 8 条候选路径、score 1.5、threshold 0.25；保留双声呼喊与后端 ASR 二次确认。重新待机时重建音频流，清理上一轮的特征与未解码尾音。刷新能力配置后保持唤醒等待，并重新应用参数；连接期间新增音频不计入会话创建时的前滚长度。
+
+合成样本对比（sherpa-onnx 1.13.8）：65 个起始静音位置 × 原音量/15% 音量，4 个正样本共 520 次，旧参数识别 340 次，新参数 516 次；3 个负样本共 390 次，两组均无触发。该结果不代表真人、远场或噪声环境的识别率。样本与来源见 `test/fixtures/wake_word/README.md`。
+
+离线重跑：
+
+```sh
+uv run --python 3.11 --with sherpa-onnx==1.13.8 --with numpy scripts/check_wake_word.py --output /tmp/wake-comparison.json
+```
+
+Android 真机回归（会临时安装测试入口，结束后须重新安装正常入口）：
+
+```sh
+python3 -m http.server 8766 --bind 127.0.0.1 --directory test/fixtures/wake_word
+adb reverse tcp:8766 tcp:8766
+flutter test integration_test/wake_word_test.dart -d <USB_SERIAL>
+./scripts/install_usb_debug.sh <USB_SERIAL>
+```
+
+测试包含严格参数到新参数的重新初始化、连读、停顿、低音量、不同音色、单声和相似词对照；不需要登录或上传用户音频。验收后可执行 `adb reverse --remove tcp:8766`。

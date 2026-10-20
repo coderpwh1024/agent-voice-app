@@ -97,6 +97,7 @@ class VoiceSessionController extends ChangeNotifier {
   final Queue<Uint8List> _preRoll = Queue<Uint8List>();
   final List<Uint8List> _pendingWakeAudio = <Uint8List>[];
   int _preRollBytes = 0;
+  int _wakePreRollSamples = 0;
   AudioProcessingState? _processingState;
   final _AudioMetricsAccumulator _metrics = _AudioMetricsAccumulator();
   int _speechFrames = 0;
@@ -121,6 +122,7 @@ class VoiceSessionController extends ChangeNotifier {
   bool get isConnected => _connectionId != null && _socket != null;
   bool get isWakeListening => _state == VoiceConnectionState.wakeListening;
   bool get wakeWordEnabled => _wakeArmed;
+  bool get isWakeActivating => _wakeArmed && _wakeTriggered;
   AudioProcessingState? get audioProcessingState => _processingState;
 
   void updateConfig(AppConfig config) {
@@ -157,13 +159,27 @@ class VoiceSessionController extends ChangeNotifier {
       if (!value.hasMatchingVoiceCatalog || value.voiceOptions.isEmpty) {
         throw const ApiException(503, '当前语音模型的音色配置不可用，请检查后端配置');
       }
+      if (_wakeArmed && !_wakeTriggered && !isConnected) {
+        await _wakeWordDetector.initialize(
+          WakeWordConfig(
+            keyword: value.wakeWord.keyword,
+            score: value.wakeWord.score,
+            threshold: value.wakeWord.threshold,
+          ),
+        );
+      }
       _error = null;
     } catch (error) {
       _recordError(error);
       rethrow;
     } finally {
       if (!isConnected) {
-        _setState(VoiceConnectionState.disconnected);
+        if (_wakeArmed && !_wakeTriggered) _wakeWordDetector.reset();
+        _setState(
+          _wakeArmed && !_wakeTriggered
+              ? VoiceConnectionState.wakeListening
+              : VoiceConnectionState.disconnected,
+        );
       }
     }
   }
@@ -216,6 +232,7 @@ class VoiceSessionController extends ChangeNotifier {
       _onWakeDetected,
       onError: _recordError,
     );
+    _wakeWordDetector.reset();
     _wakeAgentId = agentId;
     _wakeVoice = voice;
     _wakeThreadId = threadId;
@@ -234,6 +251,7 @@ class VoiceSessionController extends ChangeNotifier {
     _preRoll.clear();
     _pendingWakeAudio.clear();
     _preRollBytes = 0;
+    _wakePreRollSamples = 0;
     if (!isConnected) {
       if (hadWakeAudio) {
         await _audio.stop();
@@ -256,6 +274,7 @@ class VoiceSessionController extends ChangeNotifier {
     _pendingWakeAudio
       ..clear()
       ..addAll(_preRoll.map(Uint8List.fromList));
+    _wakePreRollSamples = _preRollBytes ~/ 2;
     unawaited(
       _connectFromWake(agentId: agentId, voice: voice, threadId: _wakeThreadId),
     );
@@ -305,12 +324,7 @@ class VoiceSessionController extends ChangeNotifier {
         activation: wakeActivation ? 'wake_word' : 'tap',
         wakeWord: wakeActivation ? _capabilities!.wakeWord.keyword : null,
         wakeEngine: wakeActivation ? 'sherpa-onnx-1.13.8' : null,
-        preRollSamples: wakeActivation
-            ? _pendingWakeAudio.fold<int>(
-                0,
-                (sum, item) => sum + item.length ~/ 2,
-              )
-            : null,
+        preRollSamples: wakeActivation ? _wakePreRollSamples : null,
       );
       _wakeConfirmationPending = wakeActivation;
       final socket = await VoiceSocket.connect(
@@ -731,9 +745,9 @@ class VoiceSessionController extends ChangeNotifier {
     final copy = Uint8List.fromList(bytes);
     _preRoll.add(copy);
     _preRollBytes += copy.length;
-    final maximum = ((_capabilities?.wakeWord.preRollMs ?? 2200) * 32).clamp(
+    final maximum = ((_capabilities?.wakeWord.preRollMs ?? 4000) * 32).clamp(
       640,
-      96000,
+      192000,
     );
     while (_preRollBytes > maximum && _preRoll.isNotEmpty) {
       _preRollBytes -= _preRoll.removeFirst().length;
@@ -864,6 +878,7 @@ class VoiceSessionController extends ChangeNotifier {
       _pendingWakeAudio.clear();
       _preRoll.clear();
       _preRollBytes = 0;
+      _wakePreRollSamples = 0;
       if (sendClose && socket != null) {
         socket.sendJson(clientEvent('session.close'));
       }
