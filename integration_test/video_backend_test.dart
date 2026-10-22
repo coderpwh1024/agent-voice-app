@@ -6,6 +6,7 @@ import 'package:agent_voice_app/features/videos/data/video_models.dart';
 import 'package:agent_voice_app/features/videos/video_create_page.dart';
 import 'package:agent_voice_app/features/videos/video_detail_page.dart';
 import 'package:agent_voice_app/features/videos/video_studio_page.dart';
+import 'package:agent_voice_app/features/videos/video_playback.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -52,18 +53,71 @@ void main() {
     await tester.pumpWidget(wrap(VideoCreatePage(config: config, api: api)));
     await tester.pumpAndSettle();
     await binding.takeScreenshot('video-create');
+    await tester.enterText(
+      find.byKey(const Key('video-prompt')),
+      '夕阳下的湖岸，湖水轻轻泛起涟漪。',
+    );
+    await tester.ensureVisible(find.byKey(const Key('video-title')));
+    await tester.enterText(find.byKey(const Key('video-title')), '湖畔来信 · 日落之前');
+    await tester.ensureVisible(find.byKey(const Key('video-cover-url')));
+    await tester.enterText(
+      find.byKey(const Key('video-cover-url')),
+      'https://www.bing.com/th?id=OHR.NaejangsanNP_ZH-CN6538893004_1920x1080.jpg',
+    );
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('预览封面'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('预览封面'));
+    await tester.pump(const Duration(seconds: 3));
+    await binding.takeScreenshot('video-create-metadata');
     await tester.pumpWidget(const SizedBox.shrink());
     const draft = VideoDraft(
-      prompt: '夕阳下的海岸，浪花轻轻拍打沙滩，镜头缓慢横移，暖色胶片质感，宁静而浪漫。',
+      prompt: '夕阳下的湖岸，湖水轻轻泛起涟漪，镜头缓慢横移，暖色胶片质感，宁静而浪漫。',
+      title: '湖畔来信 · 日落之前',
+      coverUrl: 'https://www.bing.com/th?id=OHR.NaejangsanNP_ZH-CN6538893004_1920x1080.jpg',
       resolution: '480P',
       duration: 3,
     );
-    final task = await api.create(draft, 'app-video-usb-20261022-01');
-    final repeated = await api.create(draft, 'app-video-usb-20261022-01');
+    final task = await api.create(draft, 'app-video-metadata-usb-20261022-01');
+    final repeated = await api.create(
+      draft,
+      'app-video-metadata-usb-20261022-01',
+    );
+    expect(task.title, draft.title);
+    expect(task.coverUrl, draft.coverUrl);
+    expect(repeated.title, draft.title);
+    expect(repeated.coverUrl, draft.coverUrl);
     expect(repeated.id, task.id, reason: '相同幂等键必须返回同一任务');
     final after = await api.list();
     expect(after.items.any((item) => item.id == task.id), isTrue);
+    final listed = after.items.singleWhere((item) => item.id == task.id);
+    expect(listed.title, draft.title);
+    expect(listed.coverUrl, draft.coverUrl);
+    await expectLater(
+      api.create(
+        const VideoDraft(prompt: 'changed metadata', title: '更改标题'),
+        'app-video-metadata-usb-20261022-01',
+      ),
+      throwsA(
+        isA<ApiException>().having((error) => error.statusCode, 'status', 409),
+      ),
+    );
     var latest = await api.detail(task.id);
+    expect(latest.title, draft.title);
+    expect(latest.coverUrl, draft.coverUrl);
+    await tester.pumpWidget(wrap(VideoStudioPage(config: config, api: api)));
+    await tester.pump(const Duration(seconds: 2));
+    await tester.scrollUntilVisible(
+      find.text(draft.title!),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pump(const Duration(seconds: 3));
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, 240));
+    await tester.pumpAndSettle();
+    await binding.takeScreenshot('video-collection-metadata');
+    await tester.pumpWidget(const SizedBox.shrink());
     var deadline = DateTime.now().add(const Duration(minutes: 8));
     while (latest.shouldPoll && DateTime.now().isBefore(deadline)) {
       await Future<void>.delayed(const Duration(seconds: 10));
@@ -72,6 +126,8 @@ void main() {
     binding.reportData ??= {};
     binding.reportData!.addAll({
       'record_id': latest.id,
+      'metadata_create_list_detail': true,
+      'metadata_idempotency_conflict': true,
       'status': latest.status,
       'storage_status': latest.storageStatus,
       'existing_profile': bridge.isEmpty,
@@ -110,6 +166,14 @@ void main() {
       await tester.pump();
       binding.reportData!['native_playback'] = true;
     }
+    expect(find.text(draft.title!), findsWidgets);
+    expect(
+      tester
+          .widget<VideoPlayback>(find.byType(VideoPlayback))
+          .coverUri
+          .toString(),
+      draft.coverUrl,
+    );
     await binding.takeScreenshot('video-detail');
     expect(tester.takeException(), isNull);
     if (latest.playableUri != null) {

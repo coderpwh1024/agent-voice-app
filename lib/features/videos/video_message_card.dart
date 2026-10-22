@@ -67,6 +67,13 @@ class VideoMessageCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (video.coverUri != null) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: VideoCover(uri: video.coverUri),
+                ),
+                const SizedBox(height: 14),
+              ],
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -99,7 +106,9 @@ class VideoMessageCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 5),
                         Text(
-                          '视频 #${video.recordId.toString().padLeft(4, '0')}',
+                          video.title?.trim().isNotEmpty == true
+                              ? video.displayTitle
+                              : '视频 #${video.recordId.toString().padLeft(4, '0')}',
                           style: TextStyle(
                             color: p.ink,
                             fontSize: 16,
@@ -194,6 +203,7 @@ class _ConversationVideoPage extends StatelessWidget {
               const SizedBox(height: 24),
               VideoPlayback(
                 uri: video.playableUri!,
+                coverUri: video.coverUri,
                 autoPlay: true,
                 onDisposed: onPlayerDisposed,
               ),
@@ -203,7 +213,9 @@ class _ConversationVideoPage extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '视频 #${video.recordId.toString().padLeft(4, '0')}',
+                      video.title?.trim().isNotEmpty == true
+                          ? video.displayTitle
+                          : '视频 #${video.recordId.toString().padLeft(4, '0')}',
                       style: TextStyle(
                         color: p.ink,
                         fontWeight: FontWeight.w700,

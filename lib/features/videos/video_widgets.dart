@@ -160,6 +160,76 @@ class VideoNotice extends StatelessWidget {
   }
 }
 
+class VideoCover extends StatelessWidget {
+  const VideoCover({
+    super.key,
+    this.uri,
+    this.child,
+    this.aspectRatio = 16 / 9,
+  });
+  final Uri? uri;
+  final Widget? child;
+  final double aspectRatio;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = VideoPalette(context);
+    Widget placeholder(String label, IconData icon) => DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: p.dark
+              ? [const Color(0xff443548), const Color(0xff252839)]
+              : [const Color(0xffe9dce1), const Color(0xffc3bdcf)],
+        ),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 32, color: p.ink.withValues(alpha: .5)),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: p.ink.withValues(alpha: .65),
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    return Semantics(
+      label: '视频封面',
+      image: true,
+      child: AspectRatio(
+        aspectRatio: aspectRatio,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (uri == null)
+              placeholder('暂无封面', Icons.movie_outlined)
+            else
+              Image.network(
+                uri.toString(),
+                fit: BoxFit.cover,
+                excludeFromSemantics: true,
+                loadingBuilder: (_, image, progress) => progress == null
+                    ? image
+                    : placeholder('封面加载中', Icons.image_outlined),
+                errorBuilder: (_, error, stack) =>
+                    placeholder('封面暂不可用', Icons.broken_image_outlined),
+              ),
+            ?child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class VideoLandscape extends StatelessWidget {
   const VideoLandscape({
     super.key,

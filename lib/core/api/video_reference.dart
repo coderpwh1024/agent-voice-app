@@ -5,11 +5,30 @@ class VideoReference {
     required this.storageStatus,
     this.videoUrl,
     this.errorCode,
+    this.title,
+    this.coverUrl,
   });
 
   final int recordId;
   final String status, storageStatus;
   final String? videoUrl, errorCode;
+  final String? title, coverUrl;
+
+  String get displayTitle => title?.trim().isNotEmpty == true
+      ? title!.trim()
+      : '影片 #${recordId.toString().padLeft(4, '0')}';
+
+  static Uri? imageUri(String? value) {
+    final uri = Uri.tryParse(value?.trim() ?? '');
+    return uri != null &&
+            ['http', 'https'].contains(uri.scheme) &&
+            uri.host.isNotEmpty &&
+            uri.userInfo.isEmpty
+        ? uri
+        : null;
+  }
+
+  Uri? get coverUri => imageUri(coverUrl);
 
   static VideoReference? tryParse(Object? value) {
     if (value is! Map) return null;
@@ -28,6 +47,10 @@ class VideoReference {
       recordId: id,
       status: status,
       storageStatus: storage,
+      title: value['title'] is String ? value['title'] as String : null,
+      coverUrl: value['cover_url'] is String
+          ? value['cover_url'] as String
+          : null,
       videoUrl: value['qiniu_video_url'] is String
           ? value['qiniu_video_url'] as String
           : null,

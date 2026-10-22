@@ -129,7 +129,9 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                 const VideoEyebrow('A LITTLE FILM, ALL YOURS'),
                 const SizedBox(height: 12),
                 Text(
-                  task?.playableUri != null
+                  task?.title?.trim().isNotEmpty == true
+                      ? task!.displayTitle
+                      : task?.playableUri != null
                       ? '这一刻，值得被珍藏。'
                       : task?.shouldPoll == true
                       ? '你的灵感，正在成片。'
@@ -146,46 +148,22 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                   VideoPlayback(
                     key: ValueKey(uri.toString()),
                     uri: uri,
+                    coverUri: task?.coverUri,
                     onDisposed: widget.onPlayerDisposed,
                   )
                 else
-                  VideoLandscape(
-                    height: 240,
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const VideoEyebrow(
-                            'IN THE MAKING',
-                            color: Colors.white70,
-                          ),
-                          const SizedBox(height: 26),
-                          Icon(
-                            task?.shouldPoll == true
-                                ? Icons.auto_awesome_outlined
-                                : Icons.movie_outlined,
-                            color: Colors.white,
-                            size: 36,
-                          ),
-                          const SizedBox(height: 14),
-                          Text(
-                            task?.label ?? '正在读取影片',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 24,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            '每一帧，都值得一点等待。',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: VideoCover(
+                      uri: task?.coverUri,
+                      child: Align(
+                        alignment: Alignment.bottomLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: task == null
+                              ? const Chip(label: Text('正在读取影片'))
+                              : VideoStatusBadge(task),
+                        ),
                       ),
                     ),
                   ),
@@ -204,21 +182,17 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                '影片 #${task.id.toString().padLeft(4, '0')}',
-                                style: TextStyle(
-                                  color: p.ink,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                            VideoStatusBadge(task),
-                          ],
+                        Text(
+                          task.displayTitle,
+                          style: TextStyle(
+                            color: p.ink,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            height: 1.5,
+                          ),
                         ),
+                        const SizedBox(height: 10),
+                        VideoStatusBadge(task),
                         const SizedBox(height: 16),
                         Text(
                           task.description,
@@ -262,6 +236,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                       children: [
                         const VideoEyebrow('FILM NOTES'),
                         const SizedBox(height: 16),
+                        _Info('作品编号', '#${task.id.toString().padLeft(4, '0')}'),
                         _Info('创建时间', videoDate(task.createdAt)),
                         _Info('最近更新', videoDate(task.updatedAt)),
                         _Info('生成状态', task.status),

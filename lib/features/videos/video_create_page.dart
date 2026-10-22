@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/config/app_config.dart';
+import '../../core/api/video_reference.dart';
 import 'data/video_api.dart';
 import 'data/video_models.dart';
 import 'video_detail_page.dart';
@@ -18,6 +19,9 @@ class VideoCreatePage extends StatefulWidget {
 class _VideoCreatePageState extends State<VideoCreatePage> {
   final _prompt = TextEditingController();
   final _seed = TextEditingController();
+  final _title = TextEditingController();
+  final _cover = TextEditingController();
+  Uri? _previewCover;
   final _form = GlobalKey<FormState>();
   late final VideoApi _api;
   String _model = VideoDraft.models.first,
@@ -39,6 +43,9 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
       _submittedDraft = draft;
       _idempotencyKey = pending.key;
       _prompt.text = draft.prompt;
+      _title.text = draft.title ?? '';
+      _cover.text = draft.coverUrl ?? '';
+      _previewCover = VideoReference.imageUri(draft.coverUrl);
       _model = draft.model;
       _resolution = draft.resolution;
       _ratio = draft.ratio;
@@ -53,16 +60,20 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
   void dispose() {
     _prompt.dispose();
     _seed.dispose();
+    _title.dispose();
+    _cover.dispose();
     if (widget.api == null) _api.close();
     super.dispose();
   }
 
   Future<void> _submit() async {
-    if (_submitting || !_form.currentState!.validate()) return;
+    if (_submitting) return;
     final draft =
         _submittedDraft ??
         VideoDraft(
           prompt: _prompt.text,
+          title: _title.text,
+          coverUrl: _cover.text,
           model: _model,
           resolution: _resolution,
           ratio: _ratio,
@@ -74,6 +85,7 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
       setState(() => _error = error);
       return;
     }
+    if (!_form.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
     setState(() {
       _submittedDraft = draft;
@@ -249,7 +261,96 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const VideoEyebrow('02 / THE LITTLE DETAILS'),
+                        const VideoEyebrow('02 / TITLE & COVER'),
+                        const SizedBox(height: 14),
+                        Text(
+                          '给作品一个名字',
+                          style: TextStyle(
+                            color: p.ink,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '选填，让每一段灵感都更容易被找到。',
+                          style: TextStyle(
+                            color: p.muted,
+                            fontSize: 12,
+                            height: 1.7,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          key: const Key('video-title'),
+                          controller: _title,
+                          enabled: !_locked,
+                          maxLines: 2,
+                          minLines: 1,
+                          decoration: const InputDecoration(
+                            labelText: '视频标题（可选）',
+                            hintText: '比如：在海边，等一场日落',
+                            helperText: '最多 200 个字符',
+                          ),
+                          validator: VideoDraft.titleError,
+                        ),
+                        const SizedBox(height: 18),
+                        TextFormField(
+                          key: const Key('video-cover-url'),
+                          controller: _cover,
+                          enabled: !_locked,
+                          keyboardType: TextInputType.url,
+                          autocorrect: false,
+                          maxLines: 3,
+                          minLines: 1,
+                          decoration: const InputDecoration(
+                            labelText: '封面 URL（可选）',
+                            hintText: 'https://…/cover.jpg',
+                            helperText: '使用可公开访问的 HTTP/HTTPS 图片地址',
+                            helperMaxLines: 2,
+                          ),
+                          validator: VideoDraft.coverError,
+                          onChanged: (_) {
+                            if (_previewCover != null) {
+                              setState(() => _previewCover = null);
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                            onPressed: _locked
+                                ? null
+                                : () {
+                                    if (_form.currentState!.validate()) {
+                                      FocusScope.of(context).unfocus();
+                                      setState(
+                                        () => _previewCover =
+                                            VideoReference.imageUri(
+                                              _cover.text,
+                                            ),
+                                      );
+                                    }
+                                  },
+                            icon: const Icon(Icons.image_outlined, size: 17),
+                            label: const Text('预览封面'),
+                          ),
+                        ),
+                        if (_previewCover != null)
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: VideoCover(uri: _previewCover),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  VideoPanel(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const VideoEyebrow('03 / THE LITTLE DETAILS'),
                         const SizedBox(height: 18),
                         _select(
                           '生成模型',

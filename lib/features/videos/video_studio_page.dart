@@ -485,56 +485,98 @@ class _FilmCard extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                width: 64,
-                height: 82,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: task.id.isEven
-                        ? [const Color(0xffdfc3be), const Color(0xff8d728e)]
-                        : [const Color(0xffc4c7d8), const Color(0xff747d99)],
-                  ),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(
-                  task.playableUri != null
-                      ? Icons.play_circle_outline_rounded
-                      : Icons.movie_outlined,
-                  color: Colors.white,
-                  size: 30,
-                ),
-              ),
-              const SizedBox(width: 15),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '影片 #${task.id.toString().padLeft(4, '0')}',
-                      style: TextStyle(
-                        color: p.ink,
-                        fontWeight: FontWeight.w700,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            VideoCover(
+              uri: task.coverUri,
+              child: Stack(
+                children: [
+                  const Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Color(0x18000000),
+                            Color(0x00000000),
+                            Color(0x66000000),
+                          ],
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 5),
-                    Text(
-                      videoDate(task.createdAt),
-                      style: TextStyle(color: p.muted, fontSize: 10),
+                  ),
+                  Positioned(top: 12, left: 12, child: VideoStatusBadge(task)),
+                  if (task.playableUri != null)
+                    const Positioned(
+                      bottom: 12,
+                      left: 14,
+                      child: Icon(
+                        Icons.play_circle_filled_rounded,
+                        color: Colors.white,
+                        size: 32,
+                      ),
                     ),
-                    const SizedBox(height: 8),
-                    VideoStatusBadge(task),
-                  ],
-                ),
+                  Positioned(
+                    bottom: 12,
+                    right: 14,
+                    child: Text(
+                      'NO. ${task.id.toString().padLeft(4, '0')}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              Icon(Icons.arrow_forward_rounded, color: p.muted, size: 18),
-            ],
-          ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          task.displayTitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: p.ink,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        Text(
+                          videoDate(task.createdAt),
+                          style: TextStyle(color: p.muted, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: p.blush,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.arrow_outward_rounded,
+                      color: VideoPalette.accent,
+                      size: 18,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

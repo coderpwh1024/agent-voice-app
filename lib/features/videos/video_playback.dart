@@ -10,9 +10,11 @@ class VideoPlayback extends StatefulWidget {
     super.key,
     required this.uri,
     this.autoPlay = false,
+    this.coverUri,
     this.onDisposed,
   });
   final Uri uri;
+  final Uri? coverUri;
   final bool autoPlay;
   final ValueChanged<Future<void>>? onDisposed;
   @override
@@ -133,6 +135,17 @@ class _VideoPlaybackState extends State<VideoPlayback>
                   alignment: Alignment.center,
                   children: [
                     VideoPlayer(controller),
+                    if (!controller.value.isPlaying &&
+                        controller.value.position == Duration.zero &&
+                        widget.coverUri != null)
+                      Positioned.fill(
+                        child: VideoCover(
+                          uri: widget.coverUri,
+                          aspectRatio: controller.value.aspectRatio > 0
+                              ? controller.value.aspectRatio
+                              : 16 / 9,
+                        ),
+                      ),
                     if (!controller.value.isPlaying)
                       IconButton.filled(
                         tooltip: '播放影片',

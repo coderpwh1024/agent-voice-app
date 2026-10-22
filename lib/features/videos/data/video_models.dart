@@ -9,6 +9,8 @@ class VideoDraft {
     this.duration = 5,
     this.watermark = true,
     this.seed,
+    this.title,
+    this.coverUrl,
   });
 
   static const models = ['happyhorse-1.1-t2v', 'happyhorse-1.0-t2v'];
@@ -27,8 +29,23 @@ class VideoDraft {
   final int duration;
   final bool watermark;
   final int? seed;
+  final String? title, coverUrl;
+
+  static String? titleError(String? value) =>
+      value != null && value.runes.length > 200 ? '视频标题最多 200 个字符' : null;
+
+  static String? coverError(String? value) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) return null;
+    if (text.runes.length > 2048) return '封面地址最多 2048 个字符';
+    return VideoReference.imageUri(text) == null
+        ? '请输入有效的 HTTP/HTTPS 封面地址'
+        : null;
+  }
 
   String? get validationError {
+    if (titleError(title) case final error?) return error;
+    if (coverError(coverUrl) case final error?) return error;
     final text = prompt.trim();
     if (text.isEmpty) return '写下你想看见的画面';
     if (text.runes.length > 5000) return '描述最多 5000 个字符';
@@ -52,6 +69,8 @@ class VideoDraft {
 
   Map<String, Object?> toJson() => {
     'prompt': prompt.trim(),
+    if (title?.trim().isNotEmpty == true) 'title': title!.trim(),
+    if (coverUrl?.trim().isNotEmpty == true) 'cover_url': coverUrl!.trim(),
     'model': model,
     'resolution': resolution,
     'ratio': ratio,
@@ -71,6 +90,8 @@ class VideoTask extends VideoReference {
     this.taskId,
     super.videoUrl,
     super.errorCode,
+    super.title,
+    super.coverUrl,
   }) : super(recordId: id);
 
   int get id => recordId;
@@ -83,6 +104,8 @@ class VideoTask extends VideoReference {
     storageStatus: json['storage_status'] as String,
     taskId: json['task_id'] as String?,
     videoUrl: json['qiniu_video_url'] as String?,
+    title: json['title'] as String?,
+    coverUrl: json['cover_url'] as String?,
     errorCode: json['error_code'] as String?,
     createdAt: DateTime.parse(json['create_time'] as String),
     updatedAt: DateTime.parse(json['update_time'] as String),

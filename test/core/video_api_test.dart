@@ -15,6 +15,8 @@ Map<String, Object?> videoJson({
   'id': 42,
   'user_id': 7,
   'task_id': 'upstream-1',
+  'title': '海边日落',
+  'cover_url': 'https://cdn.example/cover.jpg',
   'status': status,
   'storage_status': storage,
   'qiniu_video_url': url,
@@ -56,6 +58,8 @@ void main() {
         expect(request.headers.value('idempotency-key'), 'same-request');
         expect(jsonDecode(await utf8.decoder.bind(request).join()), {
           'prompt': '海边日落',
+          'title': '海边日落',
+          'cover_url': 'https://cdn.example/cover.jpg',
           'model': 'happyhorse-1.1-t2v',
           'resolution': '1080P',
           'ratio': '16:9',
@@ -86,7 +90,12 @@ void main() {
     });
     expect(
       (await api.create(
-        const VideoDraft(prompt: ' 海边日落 ', seed: 42),
+        const VideoDraft(
+          prompt: ' 海边日落 ',
+          title: ' 海边日落 ',
+          coverUrl: ' https://cdn.example/cover.jpg ',
+          seed: 42,
+        ),
         'same-request',
       )).id,
       42,
@@ -97,8 +106,16 @@ void main() {
       storageStatus: 'STORED',
     );
     expect(list.total, 21);
+    expect(list.items.single.title, '海边日落');
+    expect(
+      list.items.single.coverUri.toString(),
+      'https://cdn.example/cover.jpg',
+    );
     expect(list.hasMore, isFalse);
-    expect((await api.detail(42)).status, 'PENDING');
+    final detail = await api.detail(42);
+    expect(detail.status, 'PENDING');
+    expect(detail.displayTitle, '海边日落');
+    expect(detail.coverUrl, 'https://cdn.example/cover.jpg');
     expect(calls, ['POST /videos', 'GET /videos', 'GET /videos/42']);
   });
 
@@ -126,6 +143,49 @@ void main() {
       expect(keys, ['same-request']);
       await api.create(const VideoDraft(prompt: '海边日落'), 'same-request');
       expect(keys, ['same-request', 'same-request']);
+    },
+  );
+
+  test(
+    'optional metadata remains compatible and validates before submission',
+    () {
+      expect(
+        const VideoDraft(prompt: 'x', title: '  ', coverUrl: ' ').toJson().keys,
+        isNot(contains('title')),
+      );
+      expect(
+        const VideoDraft(prompt: 'x').toJson().keys,
+        isNot(contains('cover_url')),
+      );
+      expect(
+        VideoDraft(prompt: 'x', title: '😀' * 200).validationError,
+        isNull,
+      );
+      expect(
+        VideoDraft(prompt: 'x', title: '😀' * 201).validationError,
+        isNotNull,
+      );
+      for (final url in [
+        'file:///tmp/a.jpg',
+        'javascript:evil',
+        'https://name:secret@example.com/a.jpg',
+        'http://',
+        'https://example.com/${'a' * 2048}',
+      ]) {
+        expect(
+          VideoDraft(prompt: 'x', coverUrl: url).validationError,
+          isNotNull,
+        );
+      }
+      final old = videoJson()
+        ..remove('title')
+        ..remove('cover_url');
+      expect(VideoTask.fromJson(old).displayTitle, '影片 #0042');
+      expect(VideoTask.fromJson(old).coverUri, isNull);
+      expect(
+        VideoTask.fromJson({...old, 'title': null, 'cover_url': null}).coverUri,
+        isNull,
+      );
     },
   );
 

@@ -8,6 +8,8 @@ Map<String, Object?> videoSummary({
   String storage = 'STORED',
   String? url = 'https://cdn.example/videos/happyhorse/clip.mp4',
 }) => {
+  'title': '海边日落',
+  'cover_url': 'https://cdn.example/cover.jpg',
   'record_id': 42,
   'status': status,
   'storage_status': storage,
@@ -28,6 +30,8 @@ void main() {
         },
       });
       expect(item.video!.recordId, 42);
+      expect(item.video!.displayTitle, '海边日落');
+      expect(item.video!.coverUri.toString(), 'https://cdn.example/cover.jpg');
       expect(
         item.video!.playableUri.toString(),
         'https://cdn.example/videos/happyhorse/clip.mp4',
