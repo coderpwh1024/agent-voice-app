@@ -1,9 +1,6 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:agent_voice_app/core/api/api_client.dart';
-import 'package:agent_voice_app/core/auth/auth_session_store.dart';
-import 'package:agent_voice_app/core/config/app_config.dart';
 import 'package:agent_voice_app/features/videos/data/video_api.dart';
 import 'package:agent_voice_app/features/videos/data/video_models.dart';
 import 'package:agent_voice_app/features/videos/video_create_page.dart';
@@ -14,40 +11,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:video_player/video_player.dart';
 
+import 'support/backend_auth.dart';
+
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets('USB phone: authenticated video API and existing features', (
     tester,
   ) async {
-    const baseUrl = String.fromEnvironment(
-      'API_BASE_URL',
-      defaultValue: 'http://127.0.0.1:8000',
-    );
     const bridge = String.fromEnvironment('VIDEO_TEST_AUTH_BRIDGE');
-    late final AppConfig config;
-    if (bridge.isNotEmpty) {
-      final uri = Uri.parse(bridge);
-      expect(uri.host, '127.0.0.1');
-      final http = HttpClient();
-      try {
-        final response = await (await http.getUrl(uri)).close();
-        expect(response.statusCode, 200);
-        final data = jsonDecode(
-          await utf8.decoder.bind(response).join(),
-        ) as Map<String, dynamic>;
-        config = AppConfig(
-          baseUrl: baseUrl,
-          accessToken: data['access_token'] as String,
-          userId: data['user_id'] as String,
-        );
-      } finally {
-        http.close(force: true);
-      }
-    } else {
-      final session = await const AuthSessionStore().read();
-      expect(session, isNotNull, reason: '请先在真机 App 中登录，然后重新运行视频联调');
-      config = session!.config.copyWith(baseUrl: baseUrl);
-    }
+    final config = await backendTestConfig();
     final client = AgentApiClient(config);
     final api = VideoApi(config, client: client);
     addTearDown(client.close);

@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import 'data/video_models.dart';
+import '../../core/api/video_reference.dart';
 
 class VideoPalette {
   VideoPalette(BuildContext context)
@@ -71,7 +71,7 @@ class VideoPanel extends StatelessWidget {
 
 class VideoStatusBadge extends StatelessWidget {
   const VideoStatusBadge(this.task, {super.key});
-  final VideoTask task;
+  final VideoReference task;
   @override
   Widget build(BuildContext context) {
     final p = VideoPalette(context);

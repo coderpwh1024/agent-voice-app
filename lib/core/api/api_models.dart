@@ -1,3 +1,5 @@
+import 'video_reference.dart';
+
 class EmailCodeAccepted {
   const EmailCodeAccepted({required this.expiresInSeconds});
 
@@ -345,6 +347,7 @@ class ChatItem {
     this.runId,
     this.toolNames = const [],
     this.memoryStatus,
+    this.video,
   });
 
   factory ChatItem.fromJson(Map<String, dynamic> json) => ChatItem(
@@ -356,6 +359,11 @@ class ChatItem {
         .map((item) => item['name']?.toString() ?? '')
         .where((name) => name.isNotEmpty)
         .toList(growable: false),
+    video: VideoReference.tryParse(
+      json['response_metadata'] is Map
+          ? (json['response_metadata'] as Map)['video']
+          : null,
+    ),
     memoryStatus: MemoryStatus.fromJson(
       json['response_metadata'] is Map
           ? (json['response_metadata'] as Map)['memory_status']
@@ -368,6 +376,7 @@ class ChatItem {
   final String? runId;
   final List<String> toolNames;
   final MemoryStatus? memoryStatus;
+  final VideoReference? video;
 }
 
 class ThreadSummary {

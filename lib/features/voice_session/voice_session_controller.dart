@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/api_models.dart';
+import '../../core/api/video_reference.dart';
 import '../../core/api/voice_protocol.dart';
 import '../../core/api/voice_socket.dart';
 import '../../core/audio/audio_bridge.dart';
@@ -29,19 +30,23 @@ class ConversationEntry {
     required this.text,
     this.responseId,
     this.memoryStatus,
+    this.video,
   });
 
   final String role;
   final String text;
   final String? responseId;
   final MemoryStatus? memoryStatus;
+  final VideoReference? video;
 
-  ConversationEntry copyWith({String? text}) => ConversationEntry(
-    role: role,
-    text: text ?? this.text,
-    responseId: responseId,
-    memoryStatus: memoryStatus,
-  );
+  ConversationEntry copyWith({String? text, VideoReference? video}) =>
+      ConversationEntry(
+        role: role,
+        text: text ?? this.text,
+        responseId: responseId,
+        memoryStatus: memoryStatus,
+        video: video ?? this.video,
+      );
 }
 
 class ApprovalPrompt {
@@ -505,6 +510,7 @@ class VoiceSessionController extends ChangeNotifier {
             role: item.role,
             text: item.content,
             memoryStatus: item.memoryStatus,
+            video: item.video,
           ),
         ),
       );
@@ -521,6 +527,7 @@ class VoiceSessionController extends ChangeNotifier {
           'audio.segment.started',
           'audio.segment.done',
           'response.started',
+          'agent.custom',
         }.contains(type)) {
       return;
     }
@@ -567,7 +574,7 @@ class VoiceSessionController extends ChangeNotifier {
         _responseClock
           ..reset()
           ..start();
-        if (responseId != null) {
+        if (responseId != null && !_assistantIndexes.containsKey(responseId)) {
           _assistantIndexes[responseId] = _messages.length;
           _messages.add(
             ConversationEntry(role: 'ai', text: '', responseId: responseId),
@@ -592,6 +599,30 @@ class VoiceSessionController extends ChangeNotifier {
               ? VoiceConnectionState.speaking
               : VoiceConnectionState.thinking,
         );
+      case 'agent.custom':
+        final data = event['data'];
+        if (responseId == null ||
+            data is! Map ||
+            data['type'] != 'video.task') {
+          break;
+        }
+        final video = VideoReference.tryParse(data['video']);
+        if (video == null) break;
+        final index = _assistantIndexes[responseId];
+        if (index != null && index < _messages.length) {
+          _messages[index] = _messages[index].copyWith(video: video);
+        } else {
+          _assistantIndexes[responseId] = _messages.length;
+          _messages.add(
+            ConversationEntry(
+              role: 'ai',
+              text: '',
+              responseId: responseId,
+              video: video,
+            ),
+          );
+        }
+        notifyListeners();
       case 'audio.segment.done':
         if (responseId != null) {
           await _audio.completeSegment(

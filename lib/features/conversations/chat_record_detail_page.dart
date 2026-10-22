@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_models.dart';
 import '../../core/api/chat_record_models.dart';
+import '../../core/config/app_config.dart';
+import '../videos/video_message_card.dart';
 import 'chat_record_widgets.dart';
 
 class ChatRecordDetailPage extends StatefulWidget {
@@ -103,7 +105,10 @@ class _ChatRecordDetailPageState extends State<ChatRecordDetailPage> {
         ),
       );
     }
-    return _MessageBubble(message: conversation.messages[messageIndex]);
+    return _MessageBubble(
+      message: conversation.messages[messageIndex],
+      config: widget.api.config,
+    );
   }
 
   @override
@@ -237,8 +242,9 @@ class _ConversationHeader extends StatelessWidget {
 }
 
 class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.message});
+  const _MessageBubble({required this.message, required this.config});
   final ChatItem message;
+  final AppConfig config;
 
   @override
   Widget build(BuildContext context) {
@@ -284,6 +290,8 @@ class _MessageBubble extends StatelessWidget {
               ),
               if (!human && message.memoryStatus != null)
                 MemoryStatusNote(status: message.memoryStatus!),
+              if (!human && message.video != null)
+                VideoMessageCard(video: message.video!, config: config),
             ],
           ),
         ),
@@ -326,6 +334,8 @@ class _MessageBubble extends StatelessWidget {
               ),
               if (!human && message.memoryStatus != null)
                 MemoryStatusNote(status: message.memoryStatus!),
+              if (!human && message.video != null)
+                VideoMessageCard(video: message.video!, config: config),
               if (message.content.trim().isNotEmpty &&
                   message.toolNames.isNotEmpty) ...[
                 const SizedBox(height: 8),

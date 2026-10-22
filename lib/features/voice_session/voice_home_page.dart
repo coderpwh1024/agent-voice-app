@@ -4,11 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../../core/api/api_models.dart';
+import '../../core/api/video_reference.dart';
+import '../../core/config/app_config.dart';
 import '../../core/audio/audio_bridge.dart';
 import '../conversations/personal_library_page.dart';
 import '../conversations/chat_record_widgets.dart';
 import '../profile/profile_avatar.dart';
 import '../videos/video_studio_page.dart';
+import '../videos/video_message_card.dart';
 import 'voice_session_controller.dart';
 
 class VoiceHomePage extends StatefulWidget {
@@ -405,6 +408,55 @@ class _VoiceHomePageState extends State<VoiceHomePage>
     _scheduleDefaultWake();
   }
 
+  Future<void> _openConversationVideo(VideoReference video, bool play) async {
+    final controller = widget.controller;
+    if (_browsingHistory) return;
+    if (controller.state == VoiceConnectionState.connecting ||
+        controller.isWakeActivating) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('语音正在连接，请稍后查看影片')));
+      return;
+    }
+    final previous = controller.isConnected ? controller.session : null;
+    final config = controller.config;
+    var mediaReleased = false;
+    _browsingHistory = true;
+    try {
+      await controller.disableWakeWord();
+      await controller.disconnect();
+      if (!mounted) return;
+      await openConversationVideo(context, config, video, play: play);
+      mediaReleased = true;
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('暂时无法打开影片：$error')));
+      }
+    } finally {
+      if (mounted) {
+        final foreground =
+            WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+        if (mediaReleased &&
+            previous != null &&
+            foreground &&
+            controller.config == config) {
+          try {
+            await controller.connect(
+              agentId: previous.agentId,
+              voice: previous.voice,
+              threadId: previous.threadId,
+            );
+          } catch (_) {
+            // The controller displays connection errors and retains the conversation.
+          }
+        }
+        _browsingHistory = false;
+        _defaultWakeAttempted = false;
+        if (mediaReleased && foreground) _scheduleDefaultWake();
+      }
+    }
+  }
+
   Future<void> _openVideos() async {
     if (_browsingHistory || widget.controller.isConnected) return;
     _browsingHistory = true;
@@ -736,6 +788,9 @@ class _VoiceHomePageState extends State<VoiceHomePage>
                                         itemBuilder: (context, index) =>
                                             _MessageBubble(
                                               entry: messages[index],
+                                              config: controller.config,
+                                              onOpenVideo:
+                                                  _openConversationVideo,
                                             ),
                                       ),
                                     ),
@@ -1478,9 +1533,15 @@ class _PromptChip extends StatelessWidget {
 }
 
 class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.entry});
+  const _MessageBubble({
+    required this.entry,
+    required this.config,
+    required this.onOpenVideo,
+  });
 
   final ConversationEntry entry;
+  final AppConfig config;
+  final Future<void> Function(VideoReference video, bool play) onOpenVideo;
 
   @override
   Widget build(BuildContext context) {
@@ -1530,7 +1591,9 @@ class _MessageBubble extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               SelectableText(
-                entry.text.isEmpty ? '…' : entry.text,
+                entry.text.isEmpty
+                    ? (entry.video == null ? '…' : '这是为你找到的视频。')
+                    : entry.text,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   height: 1.6,
                   color: dark
@@ -1540,6 +1603,12 @@ class _MessageBubble extends StatelessWidget {
               ),
               if (!human && entry.memoryStatus != null)
                 MemoryStatusNote(status: entry.memoryStatus!),
+              if (!human && entry.video != null)
+                VideoMessageCard(
+                  video: entry.video!,
+                  config: config,
+                  onOpen: (play) => onOpenVideo(entry.video!, play),
+                ),
             ],
           ),
         ),
