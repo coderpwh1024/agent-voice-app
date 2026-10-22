@@ -1,0 +1,562 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:video_player/video_player.dart';
+
+import '../../core/config/app_config.dart';
+import 'data/video_api.dart';
+import 'data/video_models.dart';
+import 'video_widgets.dart';
+
+class VideoDetailPage extends StatefulWidget {
+  const VideoDetailPage({
+    super.key,
+    required this.config,
+    required this.recordId,
+    this.initialTask,
+    this.api,
+  });
+  final AppConfig config;
+  final int recordId;
+  final VideoTask? initialTask;
+  final VideoApi? api;
+  @override
+  State<VideoDetailPage> createState() => _VideoDetailPageState();
+}
+
+class _VideoDetailPageState extends State<VideoDetailPage>
+    with WidgetsBindingObserver {
+  late final VideoApi _api;
+  VideoTask? _task;
+  String? _error;
+  bool _loading = false, _active = true;
+  Timer? _timer;
+  int _polls = 0;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _api = widget.api ?? VideoApi(widget.config);
+    _task = widget.initialTask;
+    _refresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _timer?.cancel();
+    if (widget.api == null) _api.close();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _active = state == AppLifecycleState.resumed;
+    if (!_active) {
+      _timer?.cancel();
+    } else {
+      _polls = 0;
+      _refresh();
+    }
+  }
+
+  void _schedule() {
+    _timer?.cancel();
+    if (_active && _task?.shouldPoll == true && _polls < 60 && _error == null) {
+      _timer = Timer(const Duration(seconds: 10), () {
+        _polls++;
+        _refresh();
+      });
+    }
+  }
+
+  Future<void> _refresh() async {
+    if (_loading) return;
+    _timer?.cancel();
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final task = await _api.detail(widget.recordId);
+      if (mounted) setState(() => _task = task);
+    } catch (error) {
+      if (mounted) setState(() => _error = videoError(error));
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+        _schedule();
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = VideoPalette(context);
+    final task = _task;
+    return Scaffold(
+      backgroundColor: p.background,
+      appBar: AppBar(
+        title: const Text('影片详情'),
+        backgroundColor: p.background,
+        surfaceTintColor: Colors.transparent,
+        actions: [
+          IconButton(
+            tooltip: '刷新任务',
+            onPressed: _loading
+                ? null
+                : () {
+                    _polls = 0;
+                    _refresh();
+                  },
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: SafeArea(
+        top: false,
+        child: VideoLayout(
+          child: RefreshIndicator(
+            onRefresh: _refresh,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(22, 12, 22, 36),
+              children: [
+                const VideoEyebrow('A LITTLE FILM, ALL YOURS'),
+                const SizedBox(height: 12),
+                Text(
+                  task?.playableUri != null
+                      ? '这一刻，值得被珍藏。'
+                      : task?.shouldPoll == true
+                      ? '你的灵感，正在成片。'
+                      : '关于这部影片。',
+                  style: TextStyle(
+                    color: p.ink,
+                    fontSize: 26,
+                    letterSpacing: -1,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                if (task?.playableUri case final uri?)
+                  _VideoPlayback(key: ValueKey(uri.toString()), uri: uri)
+                else
+                  VideoLandscape(
+                    height: 240,
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const VideoEyebrow(
+                            'IN THE MAKING',
+                            color: Colors.white70,
+                          ),
+                          const SizedBox(height: 26),
+                          Icon(
+                            task?.shouldPoll == true
+                                ? Icons.auto_awesome_outlined
+                                : Icons.movie_outlined,
+                            color: Colors.white,
+                            size: 36,
+                          ),
+                          const SizedBox(height: 14),
+                          Text(
+                            task?.label ?? '正在读取影片',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            '每一帧，都值得一点等待。',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (_loading)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 12),
+                    child: LinearProgressIndicator(minHeight: 2),
+                  ),
+                const SizedBox(height: 20),
+                if (_error != null) ...[
+                  VideoNotice(_error!, onRetry: _loading ? null : _refresh),
+                  const SizedBox(height: 16),
+                ],
+                if (task != null) ...[
+                  VideoPanel(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '影片 #${task.id.toString().padLeft(4, '0')}',
+                                style: TextStyle(
+                                  color: p.ink,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            VideoStatusBadge(task),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          task.description,
+                          style: TextStyle(color: p.muted, height: 1.8),
+                        ),
+                        const SizedBox(height: 24),
+                        _Stage(
+                          number: '01',
+                          title: '提交灵感',
+                          subtitle: '任务已记录',
+                          done: true,
+                        ),
+                        _Stage(
+                          number: '02',
+                          title: '生成画面',
+                          subtitle: switch (task.status) {
+                            'SUCCEEDED' => '生成完成',
+                            _ => task.label,
+                          },
+                          done: task.status == 'SUCCEEDED',
+                        ),
+                        _Stage(
+                          number: '03',
+                          title: '保存影片',
+                          subtitle: switch (task.storageStatus) {
+                            'STORED' => '已保存，可播放',
+                            'FAILED' => '保存待重试',
+                            'PENDING' => '正在保存',
+                            _ => '等待生成完成',
+                          },
+                          done: task.storageStatus == 'STORED',
+                          last: true,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  VideoPanel(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const VideoEyebrow('FILM NOTES'),
+                        const SizedBox(height: 16),
+                        _Info('创建时间', videoDate(task.createdAt)),
+                        _Info('最近更新', videoDate(task.updatedAt)),
+                        _Info('生成状态', task.status),
+                        _Info('保存状态', task.storageStatus),
+                        if (task.taskId != null) _Info('任务编号', task.taskId!),
+                        if (task.errorCode != null)
+                          _Info('状态提示', task.errorCode!),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  if (task.playableUri != null)
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        await Clipboard.setData(
+                          ClipboardData(text: task.playableUri.toString()),
+                        );
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('影片链接已复制')),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.link_rounded),
+                      label: const Text('复制影片链接'),
+                    ),
+                  if (task.shouldPoll)
+                    Text(
+                      _polls < 60
+                          ? '停留此页时每 10 秒查询一次，切到后台会暂停。'
+                          : '自动查询已暂停，可下拉刷新；后台生成仍会继续。',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: p.muted,
+                        fontSize: 11,
+                        height: 1.8,
+                      ),
+                    ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Info extends StatelessWidget {
+  const _Info(this.label, this.value);
+  final String label, value;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 80,
+          child: Text(
+            label,
+            style: TextStyle(color: VideoPalette(context).muted, fontSize: 12),
+          ),
+        ),
+        Expanded(
+          child: SelectableText(
+            value,
+            style: TextStyle(color: VideoPalette(context).ink, fontSize: 12),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _Stage extends StatelessWidget {
+  const _Stage({
+    required this.number,
+    required this.title,
+    required this.subtitle,
+    required this.done,
+    this.last = false,
+  });
+  final String number, title, subtitle;
+  final bool done, last;
+  @override
+  Widget build(BuildContext context) {
+    final p = VideoPalette(context);
+    return Padding(
+      padding: EdgeInsets.only(bottom: last ? 0 : 20),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: done ? p.blush : p.background,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Center(
+              child: done
+                  ? const Icon(
+                      Icons.check_rounded,
+                      size: 17,
+                      color: VideoPalette.accent,
+                    )
+                  : Text(
+                      number,
+                      style: TextStyle(color: p.muted, fontSize: 11),
+                    ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: p.ink,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(subtitle, style: TextStyle(color: p.muted, fontSize: 11)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VideoPlayback extends StatefulWidget {
+  const _VideoPlayback({super.key, required this.uri});
+  final Uri uri;
+  @override
+  State<_VideoPlayback> createState() => _VideoPlaybackState();
+}
+
+class _VideoPlaybackState extends State<_VideoPlayback>
+    with WidgetsBindingObserver {
+  VideoPlayerController? _controller;
+  String? _error;
+  bool _ready = false;
+  int _generation = 0;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _initialize();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) unawaited(_controller?.pause());
+  }
+
+  Future<void> _initialize() async {
+    final generation = ++_generation;
+    final previous = _controller;
+    _controller = null;
+    if (previous != null) await previous.dispose();
+    if (!mounted || generation != _generation) return;
+    setState(() {
+      _error = null;
+      _ready = false;
+    });
+    final controller = VideoPlayerController.networkUrl(
+      widget.uri,
+      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+    );
+    _controller = controller;
+    try {
+      await controller.initialize().timeout(const Duration(seconds: 30));
+      if (!mounted || generation != _generation) return;
+      controller.addListener(_changed);
+      setState(() => _ready = true);
+    } catch (_) {
+      if (mounted && generation == _generation) {
+        setState(() => _error = '影片暂时无法加载，请重试');
+      }
+    }
+  }
+
+  void _changed() {
+    if (mounted) {
+      setState(() {
+        if (_controller?.value.hasError == true) _error = '播放中断，请检查网络后重试';
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _generation++;
+    WidgetsBinding.instance.removeObserver(this);
+    _controller?.removeListener(_changed);
+    unawaited(_controller?.dispose());
+    super.dispose();
+  }
+
+  Future<void> _toggle() async {
+    final controller = _controller;
+    if (controller == null || !_ready) return;
+    try {
+      if (controller.value.isPlaying) {
+        await controller.pause();
+      } else {
+        if (controller.value.position >= controller.value.duration) {
+          await controller.seekTo(Duration.zero);
+        }
+        await controller.play();
+      }
+    } catch (_) {
+      if (mounted) setState(() => _error = '播放中断，请重试');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = _controller;
+    if (_error != null) return VideoNotice(_error!, onRetry: _initialize);
+    if (!_ready || controller == null) {
+      return const SizedBox(
+        height: 230,
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: ColoredBox(
+        color: const Color(0xff19151e),
+        child: Column(
+          children: [
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 440),
+              child: AspectRatio(
+                aspectRatio: controller.value.aspectRatio > 0
+                    ? controller.value.aspectRatio
+                    : 16 / 9,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    VideoPlayer(controller),
+                    if (!controller.value.isPlaying)
+                      IconButton.filled(
+                        tooltip: '播放影片',
+                        onPressed: _toggle,
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.black54,
+                          foregroundColor: Colors.white,
+                        ),
+                        iconSize: 40,
+                        icon: const Icon(Icons.play_arrow_rounded),
+                      ),
+                    if (controller.value.isBuffering)
+                      const CircularProgressIndicator(color: Colors.white),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 6, 16, 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: controller.value.isPlaying ? '暂停影片' : '播放影片',
+                    onPressed: _toggle,
+                    icon: Icon(
+                      controller.value.isPlaying
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                      color: Colors.white,
+                    ),
+                  ),
+                  Expanded(
+                    child: VideoProgressIndicator(
+                      controller,
+                      allowScrubbing: true,
+                      colors: const VideoProgressColors(
+                        playedColor: Color(0xffe6a6bd),
+                        bufferedColor: Colors.white30,
+                        backgroundColor: Colors.white12,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    '${controller.value.position.inSeconds} / ${controller.value.duration.inSeconds}s',
+                    style: const TextStyle(color: Colors.white70, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

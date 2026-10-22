@@ -4,6 +4,7 @@
 
 ## 当前能力
 
+- 视频工作室：独立生成、分页作品列表、编号查询、状态同步与影片播放，详见 [视频模块说明](docs/Video_Studio.md)
 - 读取 `/voice/capabilities`，选择 Agent 与服务端配置的音色，并展示音色名称与描述
 - 邮箱验证码登录与自动注册，接入 `/auth/email/code`、`/auth/email/verify`
 - 登录态安全保存：iOS Keychain、Android Keystore AES-GCM
@@ -150,6 +151,7 @@ lib/
 ├── features/voice_session/    会话状态、打断、播放确认、主界面
 ├── features/conversations/    个人内容收藏页与历史会话
 ├── features/memories/         长期记忆、编辑与分页变更历史
+├── features/videos/           视频生成、作品列表、查询与播放器（独立模块）
 └── features/settings/         后端与身份设置
 android/                       AudioRecord / AudioTrack / Android AEC
 ios/                           AVAudioEngine / Voice Processing

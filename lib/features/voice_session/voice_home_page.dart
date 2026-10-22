@@ -8,6 +8,7 @@ import '../../core/audio/audio_bridge.dart';
 import '../conversations/personal_library_page.dart';
 import '../conversations/chat_record_widgets.dart';
 import '../profile/profile_avatar.dart';
+import '../videos/video_studio_page.dart';
 import 'voice_session_controller.dart';
 
 class VoiceHomePage extends StatefulWidget {
@@ -404,6 +405,26 @@ class _VoiceHomePageState extends State<VoiceHomePage>
     _scheduleDefaultWake();
   }
 
+  Future<void> _openVideos() async {
+    if (_browsingHistory || widget.controller.isConnected) return;
+    _browsingHistory = true;
+    try {
+      await widget.controller.disableWakeWord();
+      if (!mounted) return;
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => VideoStudioPage(config: widget.controller.config),
+        ),
+      );
+    } finally {
+      _browsingHistory = false;
+      if (mounted) {
+        _defaultWakeAttempted = false;
+        _scheduleDefaultWake();
+      }
+    }
+  }
+
   Future<void> _openHistory() async {
     if (_browsingHistory || widget.controller.isConnected) {
       return;
@@ -554,6 +575,11 @@ class _VoiceHomePageState extends State<VoiceHomePage>
           ),
         ),
         actions: [
+          IconButton(
+            tooltip: '视频工作室',
+            onPressed: connected ? null : _openVideos,
+            icon: const Icon(Icons.movie_creation_outlined),
+          ),
           IconButton(
             tooltip: '对话偏好',
             onPressed: _showPreferences,

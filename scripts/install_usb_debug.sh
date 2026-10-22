@@ -61,7 +61,7 @@ if [[ -n "$installed_build_number" && "$installed_build_number" -ge "$build_numb
 fi
 
 cd "$project_dir"
-"$flutter_bin" build apk --debug --build-number="$build_number" --dart-define="API_BASE_URL=$base_url"
+"$flutter_bin" build apk --debug --target=lib/main.dart --build-number="$build_number" --dart-define="API_BASE_URL=$base_url"
 "$adb_bin" -s "$device_id" install -r "$apk_path"
 "$adb_bin" -s "$device_id" reverse "tcp:$backend_port" "tcp:$backend_port"
 "$adb_bin" -s "$device_id" shell am force-stop "$package_name"

@@ -342,12 +342,21 @@ class AgentApiClient {
     HttpHeaders.authorizationHeader: 'Bearer ${config.accessToken.trim()}',
   };
 
+  Future<Map<String, dynamic>> requestJson(
+    String method,
+    String path, {
+    Map<String, String>? query,
+    Map<String, Object?>? body,
+    Map<String, String> headers = const {},
+  }) => _request(method, path, query: query, body: body, headers: headers);
+
   Future<Map<String, dynamic>> _request(
     String method,
     String path, {
     Map<String, String>? query,
     Map<String, Object?>? body,
     bool authenticated = true,
+    Map<String, String> headers = const {},
   }) async {
     try {
       final request = await _httpClient.openUrl(method, uri(path, query));
@@ -357,6 +366,7 @@ class AgentApiClient {
           'Bearer ${config.accessToken.trim()}',
         );
       }
+      headers.forEach((name, value) => request.headers.set(name, value));
       request.headers.contentType = ContentType.json;
       if (body != null) {
         request.write(jsonEncode(body));

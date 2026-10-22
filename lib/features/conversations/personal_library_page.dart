@@ -4,6 +4,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/api_models.dart';
 import '../../core/config/app_config.dart';
 import '../memories/memories_page.dart';
+import '../videos/video_studio_page.dart';
 import 'chat_record_widgets.dart';
 import 'chat_records_page.dart';
 
@@ -57,7 +58,7 @@ class PersonalLibraryPage extends StatelessWidget {
             ),
             const SizedBox(height: 28),
             Text(
-              '两种方式，留住日常',
+              '把日常，变成珍藏',
               style: TextStyle(
                 color: palette.ink,
                 fontSize: 17,
@@ -87,6 +88,20 @@ class PersonalLibraryPage extends StatelessWidget {
               icon: Icons.auto_stories_outlined,
               color: palette.blush,
               onTap: () => _openRecords(context),
+            ),
+            const SizedBox(height: 16),
+            _CollectionCard(
+              title: '视频工作室',
+              eyebrow: 'MOTION STUDIO',
+              description: '把文字中的灵感，变成流动的画面。\n创作影片，收藏属于你的每一帧。',
+              tag: '文字成片 · 我的作品',
+              icon: Icons.movie_creation_outlined,
+              color: palette.blush,
+              onTap: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  builder: (_) => VideoStudioPage(config: config),
+                ),
+              ),
             ),
             const SizedBox(height: 24),
             Text(
