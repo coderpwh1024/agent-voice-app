@@ -92,16 +92,8 @@ class RecordLayout extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => SafeArea(
-    top: false,
-    child: Align(
-      alignment: Alignment.topCenter,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 760),
-        child: child,
-      ),
-    ),
-  );
+  Widget build(BuildContext context) =>
+      SafeArea(top: false, child: EditorialLayout(child: child));
 }
 
 class RecordHero extends StatelessWidget {

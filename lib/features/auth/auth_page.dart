@@ -240,7 +240,9 @@ class _AuthPageState extends State<AuthPage> {
                         _ModeSelector(mode: _mode, onChanged: _setMode),
                         const SizedBox(height: 24),
                         AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 260),
+                          duration: MediaQuery.disableAnimationsOf(context)
+                              ? Duration.zero
+                              : const Duration(milliseconds: 260),
                           child: _codeSent
                               ? _buildCodeForm(theme)
                               : _buildEmailForm(theme),
@@ -307,7 +309,9 @@ class _AuthPageState extends State<AuthPage> {
           label: const Text('服务地址'),
         ),
         AnimatedSize(
-          duration: const Duration(milliseconds: 220),
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 220),
           child: _showServer
               ? Padding(
                   padding: const EdgeInsets.only(bottom: 12),
@@ -325,7 +329,7 @@ class _AuthPageState extends State<AuthPage> {
         ),
         if (registering)
           InkWell(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(8),
             onTap: () => setState(() => _acceptedTerms = !_acceptedTerms),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
@@ -555,7 +559,7 @@ class _ErrorMessage extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: colors.errorContainer,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         children: [
@@ -578,9 +582,12 @@ class _ButtonProgress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const SizedBox.square(
+    return SizedBox.square(
       dimension: 20,
-      child: CircularProgressIndicator(strokeWidth: 2.2),
+      child: CircularProgressIndicator(
+        strokeWidth: 2.2,
+        color: Theme.of(context).colorScheme.onPrimary,
+      ),
     );
   }
 }

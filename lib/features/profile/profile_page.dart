@@ -117,168 +117,174 @@ class _ProfilePageState extends State<ProfilePage> {
           const SizedBox(width: 6),
         ],
       ),
-      body: DecoratedBox(
-        decoration: BoxDecoration(color: AppPalette(context).background),
-        child: RefreshIndicator(
-          onRefresh: _refresh,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
-            children: [
-              const EditorialHeading(
-                eyebrow: 'YOUR PERSONAL SPACE',
-                title: '关于自己，慢慢记录。',
-              ),
-              const SizedBox(height: 28),
-              Center(
-                child: Hero(
-                  tag: 'profile-avatar',
-                  child: ProfileAvatar(
-                    nickname: _user.nickname,
-                    imageUrl: _user.imageUrl,
-                    size: 112,
+      body: SafeArea(
+        top: false,
+        child: EditorialLayout(
+          child: DecoratedBox(
+            decoration: BoxDecoration(color: AppPalette(context).background),
+            child: RefreshIndicator(
+              onRefresh: _refresh,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
+                children: [
+                  const EditorialHeading(
+                    eyebrow: 'YOUR PERSONAL SPACE',
+                    title: '关于自己，慢慢记录。',
                   ),
-                ),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                _user.nickname,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: -0.7,
-                ),
-              ),
-              const SizedBox(height: 5),
-              Text(
-                _user.email.isEmpty ? '开发账户' : _user.email,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 7,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppPalette(context).blush,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.verified_rounded,
-                        size: 16,
-                        color: AppPalette(context).accentInk,
+                  const SizedBox(height: 28),
+                  Center(
+                    child: Hero(
+                      tag: 'profile-avatar',
+                      child: ProfileAvatar(
+                        nickname: _user.nickname,
+                        imageUrl: _user.imageUrl,
+                        size: 112,
                       ),
-                      SizedBox(width: 6),
-                      Text(
-                        '邮箱已验证',
-                        style: TextStyle(
-                          color: AppPalette(context).accentInk,
-                          fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    _user.nickname,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: -0.7,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    _user.email.isEmpty ? '开发账户' : _user.email,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (_user.email.isNotEmpty)
+                    Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppPalette(context).blush,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.verified_rounded,
+                              size: 16,
+                              color: AppPalette(context).accentInk,
+                            ),
+                            SizedBox(width: 6),
+                            Text(
+                              '邮箱已验证',
+                              style: TextStyle(
+                                color: AppPalette(context).accentInk,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: _edit,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppPalette(context).ink,
+                            foregroundColor: AppPalette(context).background,
+                          ),
+                          icon: const Icon(Icons.edit_outlined, size: 19),
+                          label: const Text('编辑个人资料'),
                         ),
                       ),
                     ],
                   ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: _edit,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppPalette(context).ink,
-                        foregroundColor: AppPalette(context).background,
-                      ),
-                      icon: const Icon(Icons.edit_outlined, size: 19),
-                      label: const Text('编辑个人资料'),
+                  if (_loading) ...[
+                    const SizedBox(height: 18),
+                    const LinearProgressIndicator(
+                      minHeight: 2,
+                      borderRadius: BorderRadius.all(Radius.circular(99)),
+                    ),
+                  ],
+                  if (_error != null) ...[
+                    const SizedBox(height: 18),
+                    _StatusCard(message: _error!, onRetry: _refresh),
+                  ],
+                  const SizedBox(height: 26),
+                  Text(
+                    '账户信息',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
-                ],
-              ),
-              if (_loading) ...[
-                const SizedBox(height: 18),
-                const LinearProgressIndicator(
-                  minHeight: 2,
-                  borderRadius: BorderRadius.all(Radius.circular(99)),
-                ),
-              ],
-              if (_error != null) ...[
-                const SizedBox(height: 18),
-                _StatusCard(message: _error!, onRetry: _refresh),
-              ],
-              const SizedBox(height: 26),
-              Text(
-                '账户信息',
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 12),
-              _ProfileCard(
-                children: [
-                  _InfoRow(
-                    icon: Icons.badge_outlined,
-                    label: '用户 ID',
-                    value: '#${_user.id.toString().padLeft(6, '0')}',
-                  ),
-                  const _CardDivider(),
-                  _InfoRow(
-                    icon: Icons.mail_outline_rounded,
-                    label: '登录邮箱',
-                    value: _user.email.isEmpty ? '开发账户' : _user.email,
-                  ),
-                  const _CardDivider(),
-                  const _InfoRow(
-                    icon: Icons.shield_outlined,
-                    label: '账户安全',
-                    value: '系统安全存储',
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              Text(
-                '更多',
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 12),
-              _ProfileCard(
-                children: [
-                  _ActionRow(
-                    icon: Icons.psychology_outlined,
-                    label: '长期记忆',
-                    onTap: () => Navigator.of(context).push<void>(
-                      MaterialPageRoute(
-                        builder: (_) => MemoriesPage(config: widget.config),
+                  const SizedBox(height: 12),
+                  _ProfileCard(
+                    children: [
+                      _InfoRow(
+                        icon: Icons.badge_outlined,
+                        label: '用户 ID',
+                        value: '#${_user.id.toString().padLeft(6, '0')}',
                       ),
+                      const _CardDivider(),
+                      _InfoRow(
+                        icon: Icons.mail_outline_rounded,
+                        label: '登录邮箱',
+                        value: _user.email.isEmpty ? '开发账户' : _user.email,
+                      ),
+                      const _CardDivider(),
+                      const _InfoRow(
+                        icon: Icons.shield_outlined,
+                        label: '账户安全',
+                        value: '系统安全存储',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    '更多',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
-                  const _CardDivider(),
-                  _ActionRow(
-                    icon: Icons.tune_rounded,
-                    label: '连接设置',
-                    onTap: () => widget.onOpenSettings(context),
-                  ),
-                  const _CardDivider(),
-                  _ActionRow(
-                    icon: Icons.logout_rounded,
-                    label: '退出登录',
-                    destructive: true,
-                    onTap: _logout,
+                  const SizedBox(height: 12),
+                  _ProfileCard(
+                    children: [
+                      _ActionRow(
+                        icon: Icons.psychology_outlined,
+                        label: '长期记忆',
+                        onTap: () => Navigator.of(context).push<void>(
+                          MaterialPageRoute(
+                            builder: (_) => MemoriesPage(config: widget.config),
+                          ),
+                        ),
+                      ),
+                      const _CardDivider(),
+                      _ActionRow(
+                        icon: Icons.tune_rounded,
+                        label: '连接设置',
+                        onTap: () => widget.onOpenSettings(context),
+                      ),
+                      const _CardDivider(),
+                      _ActionRow(
+                        icon: Icons.logout_rounded,
+                        label: '退出登录',
+                        destructive: true,
+                        onTap: _logout,
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -296,7 +302,6 @@ class _ProfileCard extends StatelessWidget {
     return Material(
       color: AppPalette(context).surface,
       elevation: 0,
-      shadowColor: const Color(0x14211529),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
@@ -332,19 +337,31 @@ class _InfoRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(icon, size: 21, color: AppPalette(context).muted),
           const SizedBox(width: 18),
-          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-          const Spacer(),
-          Flexible(
-            child: Text(
-              value,
-              textAlign: TextAlign.end,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: AppPalette(context).muted,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                SelectableText(
+                  value,
+                  style: TextStyle(
+                    color: AppPalette(context).ink,
+                    fontSize: 14,
+                    height: 1.6,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -403,8 +420,21 @@ class _StatusCard extends StatelessWidget {
             color: Theme.of(context).colorScheme.onErrorContainer,
           ),
           const SizedBox(width: 10),
-          Expanded(child: Text(message)),
-          TextButton(onPressed: onRetry, child: const Text('重试')),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onErrorContainer,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: onRetry,
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+            child: const Text('重试'),
+          ),
         ],
       ),
     );

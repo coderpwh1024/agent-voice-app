@@ -26,6 +26,11 @@ class AppTheme {
       borderRadius: BorderRadius.circular(8),
     );
     return base.copyWith(
+      materialTapTargetSize: MaterialTapTargetSize.padded,
+      visualDensity: VisualDensity.standard,
+      iconButtonTheme: IconButtonThemeData(
+        style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
+      ),
       colorScheme: base.colorScheme.copyWith(
         primary: p.ink,
         onPrimary: p.background,
@@ -77,6 +82,8 @@ class AppTheme {
         labelStyle: TextStyle(color: p.muted, fontSize: 13),
         hintStyle: TextStyle(color: p.muted, fontSize: 13, height: 1.7),
         helperStyle: TextStyle(color: p.muted, fontSize: 11, height: 1.6),
+        helperMaxLines: 4,
+        errorMaxLines: 4,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(7),
           borderSide: BorderSide(color: p.border),
@@ -95,6 +102,7 @@ class AppTheme {
           backgroundColor: p.ink,
           foregroundColor: p.background,
           shape: shape,
+          minimumSize: const Size(48, 48),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           textStyle: const TextStyle(
             fontSize: 13,
@@ -108,11 +116,15 @@ class AppTheme {
           foregroundColor: p.ink,
           side: BorderSide(color: p.border),
           shape: shape,
+          minimumSize: const Size(48, 48),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(foregroundColor: p.ink),
+        style: TextButton.styleFrom(
+          foregroundColor: p.ink,
+          minimumSize: const Size(48, 48),
+        ),
       ),
       chipTheme: base.chipTheme.copyWith(
         backgroundColor: p.background,

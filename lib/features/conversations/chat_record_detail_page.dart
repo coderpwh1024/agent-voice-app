@@ -314,8 +314,8 @@ class _MessageBubble extends StatelessWidget {
             borderRadius: BorderRadius.only(
               topLeft: const Radius.circular(8),
               topRight: const Radius.circular(8),
-              bottomLeft: Radius.circular(human ? 20 : 5),
-              bottomRight: Radius.circular(human ? 5 : 20),
+              bottomLeft: Radius.circular(human ? 10 : 5),
+              bottomRight: Radius.circular(human ? 5 : 10),
             ),
           ),
           child: Column(

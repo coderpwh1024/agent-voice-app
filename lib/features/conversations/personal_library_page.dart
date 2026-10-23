@@ -179,7 +179,7 @@ class _CollectionCard extends StatelessWidget {
                           style: TextStyle(
                             fontFamily: 'StudioSerif',
                             color: palette.ink,
-                            fontWeight: FontWeight.w500,
+                            fontWeight: FontWeight.w400,
                             fontSize: 20,
                           ),
                         ),

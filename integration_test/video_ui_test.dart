@@ -94,6 +94,9 @@ void main() {
     );
     await tester.pump(const Duration(seconds: 3));
     if (task.playableUri != null) {
+      expect(find.byType(VideoPlayer), findsNothing);
+      await binding.takeScreenshot('studio-detail');
+      await tester.tap(find.byTooltip('播放影片').first);
       for (
         var n = 0;
         n < 60 && find.byType(VideoPlayer).evaluate().isEmpty;
@@ -102,13 +105,12 @@ void main() {
         await tester.pump(const Duration(milliseconds: 500));
       }
       expect(find.byType(VideoPlayer), findsOneWidget);
-      await binding.takeScreenshot('studio-detail');
-      await tester.tap(find.byTooltip('播放影片').first);
       await tester.pump(const Duration(seconds: 1));
       final controller = tester
           .widget<VideoPlayer>(find.byType(VideoPlayer))
           .controller;
       expect(controller.value.position, greaterThan(Duration.zero));
+      await binding.takeScreenshot('studio-playing');
       await controller.pause();
     }
     expect(tester.takeException(), isNull);

@@ -145,7 +145,8 @@ class _ChatRecordsPageState extends State<ChatRecordsPage> {
                             ],
                     ),
                     const SizedBox(height: 24),
-                    Row(
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           '与你的助手',
@@ -154,55 +155,54 @@ class _ChatRecordsPageState extends State<ChatRecordsPage> {
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            key: ValueKey(_agentId),
-                            initialValue: _agentId,
-                            isExpanded: true,
-                            decoration: InputDecoration(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 10,
-                              ),
-                              fillColor: palette.surface,
-                              filled: true,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(6),
-                                borderSide: BorderSide(color: palette.border),
-                              ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          key: ValueKey(_agentId),
+                          initialValue: _agentId,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
                             ),
-                            items: agentIds
-                                .map(
-                                  (id) => DropdownMenuItem(
-                                    value: id,
-                                    child: Text(
-                                      recordAgentName(id),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: _changeAgent,
+                            fillColor: palette.surface,
+                            filled: true,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(6),
+                              borderSide: BorderSide(color: palette.border),
+                            ),
                           ),
+                          items: agentIds
+                              .map(
+                                (id) => DropdownMenuItem(
+                                  value: id,
+                                  child: Text(
+                                    recordAgentName(id),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: _changeAgent,
                         ),
                       ],
                     ),
                     const SizedBox(height: 22),
-                    Row(
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        Expanded(
-                          child: Text(
-                            '最近的聊天',
-                            style: TextStyle(
-                              color: palette.ink,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w500,
-                            ),
+                        Text(
+                          '最近的聊天',
+                          style: TextStyle(
+                            color: palette.ink,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                         Text(

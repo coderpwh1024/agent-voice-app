@@ -566,7 +566,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
     final status = controller.isWakeActivating
         ? (connected ? '听到了，正在确认' : '听到了，正在连接')
         : _statusLabel(controller.state, capabilities);
-    final color = _statusColor(controller.state);
+    final color = _statusColor(context, controller.state);
     return Scaffold(
       backgroundColor: palette.background,
       appBar: AppBar(
@@ -697,7 +697,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
                                               .colorScheme
                                               .errorContainer,
                                           borderRadius: BorderRadius.circular(
-                                            20,
+                                            8,
                                           ),
                                           child: Padding(
                                             padding: const EdgeInsets.fromLTRB(
@@ -712,9 +712,6 @@ class _VoiceHomePageState extends State<VoiceHomePage>
                                               children: [
                                                 Text(
                                                   controller.error!,
-                                                  maxLines: 3,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
                                                   style: TextStyle(
                                                     color: Theme.of(context)
                                                         .colorScheme
@@ -724,15 +721,33 @@ class _VoiceHomePageState extends State<VoiceHomePage>
                                                 Wrap(
                                                   children: [
                                                     TextButton(
+                                                      style: TextButton.styleFrom(
+                                                        foregroundColor:
+                                                            Theme.of(context)
+                                                                .colorScheme
+                                                                .onErrorContainer,
+                                                      ),
                                                       onPressed:
                                                           _retryDefaultWake,
                                                       child: const Text('重试'),
                                                     ),
                                                     TextButton(
+                                                      style: TextButton.styleFrom(
+                                                        foregroundColor:
+                                                            Theme.of(context)
+                                                                .colorScheme
+                                                                .onErrorContainer,
+                                                      ),
                                                       onPressed: _openSettings,
                                                       child: const Text('服务设置'),
                                                     ),
                                                     TextButton(
+                                                      style: TextButton.styleFrom(
+                                                        foregroundColor:
+                                                            Theme.of(context)
+                                                                .colorScheme
+                                                                .onErrorContainer,
+                                                      ),
                                                       onPressed:
                                                           controller.clearError,
                                                       child: const Text('关闭'),
@@ -754,6 +769,13 @@ class _VoiceHomePageState extends State<VoiceHomePage>
                                     ),
                                     SliverToBoxAdapter(
                                       child: _EmptyConversation(
+                                        onPromptSelected: (value) {
+                                          _text.text = value;
+                                          _text.selection =
+                                              TextSelection.collapsed(
+                                                offset: value.length,
+                                              );
+                                        },
                                         configured:
                                             controller.config.isComplete,
                                       ),
@@ -910,15 +932,16 @@ class _VoiceHomePageState extends State<VoiceHomePage>
   }
 }
 
-Color _statusColor(VoiceConnectionState state) => switch (state) {
-  VoiceConnectionState.disconnected => const Color(0xff73786c),
-  VoiceConnectionState.wakeListening ||
-  VoiceConnectionState.ready ||
-  VoiceConnectionState.listening => const Color(0xff4b836c),
-  VoiceConnectionState.connecting => const Color(0xffa36d30),
-  VoiceConnectionState.thinking => const Color(0xff6d755f),
-  VoiceConnectionState.speaking => const Color(0xff52715c),
-};
+Color _statusColor(BuildContext context, VoiceConnectionState state) =>
+    switch (state) {
+      VoiceConnectionState.disconnected => AppPalette(context).muted,
+      VoiceConnectionState.wakeListening ||
+      VoiceConnectionState.ready ||
+      VoiceConnectionState.listening => AppPalette(context).accentInk,
+      VoiceConnectionState.connecting => AppPalette(context).muted,
+      VoiceConnectionState.thinking => AppPalette(context).ink,
+      VoiceConnectionState.speaking => AppPalette(context).accentInk,
+    };
 
 String _statusLabel(
   VoiceConnectionState state,
@@ -948,7 +971,6 @@ class _ScrollShortcut extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Material(
     elevation: 0,
-    shadowColor: Colors.black.withValues(alpha: 0.12),
     color: emphasized
         ? Theme.of(context).colorScheme.primaryContainer
         : Theme.of(context).colorScheme.surface,
@@ -1093,7 +1115,7 @@ class _WelcomeCard extends StatelessWidget {
               ),
               _VoiceOrb(
                 state: state,
-                color: _statusColor(state),
+                color: _statusColor(context, state),
                 dark: palette.dark,
               ),
             ],
@@ -1107,7 +1129,7 @@ class _WelcomeCard extends StatelessWidget {
           const SizedBox(height: 18),
           _StatusPill(
             label: status,
-            color: _statusColor(state),
+            color: _statusColor(context, state),
             dark: palette.dark,
           ),
           const SizedBox(height: 24),
@@ -1263,7 +1285,9 @@ class _ConversationPreferences extends StatelessWidget {
           ],
           if (processingState != null) ...[
             const SizedBox(height: 10),
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 _FeatureChip(
                   icon: Icons.noise_control_off_rounded,
@@ -1271,7 +1295,6 @@ class _ConversationPreferences extends StatelessWidget {
                       ? '智能降噪'
                       : '降噪不可用',
                 ),
-                const SizedBox(width: 8),
                 _FeatureChip(
                   icon: Icons.hearing_rounded,
                   label: processingState!.aecEnabled
@@ -1396,42 +1419,43 @@ class _FeatureChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Flexible(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: AppPalette(context).blush,
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 15, color: AppPalette(context).accentInk),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelSmall
-                    ?.copyWith(fontWeight: FontWeight.w600),
-              ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: AppPalette(context).blush,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: AppPalette(context).accentInk),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.labelSmall
+                  ?.copyWith(fontWeight: FontWeight.w600),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
 class _EmptyConversation extends StatelessWidget {
-  const _EmptyConversation({required this.configured});
+  const _EmptyConversation({
+    required this.configured,
+    required this.onPromptSelected,
+  });
 
   final bool configured;
+  final ValueChanged<String> onPromptSelected;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return SingleChildScrollView(
+    return Padding(
       padding: const EdgeInsets.fromLTRB(24, 18, 24, 14),
       child: Center(
         child: Column(
@@ -1456,19 +1480,25 @@ class _EmptyConversation extends StatelessWidget {
             ),
             if (configured) ...[
               const SizedBox(height: 13),
-              const Wrap(
+              Wrap(
                 alignment: WrapAlignment.center,
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  _PromptChip(icon: Icons.wb_sunny_outlined, label: '帮我规划今天'),
+                  _PromptChip(
+                    icon: Icons.wb_sunny_outlined,
+                    label: '帮我规划今天',
+                    onSelected: onPromptSelected,
+                  ),
                   _PromptChip(
                     icon: Icons.lightbulb_outline_rounded,
                     label: '给我一个灵感',
+                    onSelected: onPromptSelected,
                   ),
                   _PromptChip(
                     icon: Icons.chat_bubble_outline_rounded,
                     label: '陪我聊一会儿',
+                    onSelected: onPromptSelected,
                   ),
                 ],
               ),
@@ -1481,29 +1511,23 @@ class _EmptyConversation extends StatelessWidget {
 }
 
 class _PromptChip extends StatelessWidget {
-  const _PromptChip({required this.icon, required this.label});
+  const _PromptChip({
+    required this.icon,
+    required this.label,
+    required this.onSelected,
+  });
 
   final IconData icon;
   final String label;
+  final ValueChanged<String> onSelected;
 
   @override
   Widget build(BuildContext context) {
     final palette = AppPalette(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
-      decoration: BoxDecoration(
-        color: palette.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: palette.border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 15, color: palette.accentInk),
-          const SizedBox(width: 6),
-          Text(label, style: Theme.of(context).textTheme.labelMedium),
-        ],
-      ),
+    return ActionChip(
+      avatar: Icon(icon, size: 15, color: palette.accentInk),
+      label: Text(label, style: Theme.of(context).textTheme.labelMedium),
+      onPressed: () => onSelected(label),
     );
   }
 }

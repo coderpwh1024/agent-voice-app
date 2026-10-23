@@ -121,6 +121,7 @@ class _VideoStudioPageState extends State<VideoStudioPage> {
     final id = await showDialog<int>(
       context: context,
       builder: (context) => AlertDialog(
+        scrollable: true,
         title: const Text('查找影片'),
         content: Form(
           key: form,
@@ -261,9 +262,7 @@ class _VideoStudioPageState extends State<VideoStudioPage> {
                               tooltip: '网格视图',
                               onPressed: () => setState(() => _grid = true),
                               isSelected: _grid,
-                              color: _grid
-                                  ? p.ink
-                                  : p.muted.withValues(alpha: .6),
+                              color: _grid ? p.ink : p.muted,
                               icon: const Icon(
                                 Icons.grid_view_outlined,
                                 size: 20,
@@ -277,9 +276,7 @@ class _VideoStudioPageState extends State<VideoStudioPage> {
                               tooltip: '列表视图',
                               onPressed: () => setState(() => _grid = false),
                               isSelected: !_grid,
-                              color: !_grid
-                                  ? p.ink
-                                  : p.muted.withValues(alpha: .6),
+                              color: !_grid ? p.ink : p.muted,
                               icon: const Icon(
                                 Icons.view_agenda_outlined,
                                 size: 20,
@@ -315,6 +312,7 @@ class _VideoStudioPageState extends State<VideoStudioPage> {
                                       child: Container(
                                         constraints: const BoxConstraints(
                                           minHeight: 48,
+                                          minWidth: 48,
                                         ),
                                         alignment: Alignment.center,
                                         decoration: BoxDecoration(
@@ -359,6 +357,7 @@ class _VideoStudioPageState extends State<VideoStudioPage> {
                         if (_error != null && !_failedMore) ...[
                           VideoNotice(
                             _error!,
+                            error: true,
                             onRetry: () => _load(more: _failedMore),
                           ),
                           const SizedBox(height: 16),
@@ -452,6 +451,7 @@ class _VideoStudioPageState extends State<VideoStudioPage> {
                           if (_error != null && _failedMore) ...[
                             VideoNotice(
                               _error!,
+                              error: true,
                               onRetry: () => _load(more: true),
                             ),
                             const SizedBox(height: 16),

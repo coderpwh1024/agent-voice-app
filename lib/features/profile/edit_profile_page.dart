@@ -1,6 +1,5 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/editorial_widgets.dart';
@@ -118,7 +117,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
       setState(() => _error = '昵称不能为空');
       return;
     }
-    if (nickname.characters.length > 64) {
+    if (nickname.runes.length > 64) {
       setState(() => _error = '昵称最多 64 个字符');
       return;
     }
@@ -193,40 +192,43 @@ class _EditProfilePageState extends State<EditProfilePage> {
         ],
       ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
-          children: [
-            const EditorialHeading(
-              eyebrow: 'THE PROFILE DESK',
-              title: '让小美认识你。',
-              subtitle: '一个名字，一张熟悉的面孔。',
-            ),
-            const SizedBox(height: 28),
-            Center(
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Hero(
-                    tag: 'profile-avatar',
-                    child: ProfileAvatar(
-                      nickname: _nickname.text,
-                      imageUrl: widget.user.imageUrl,
-                      imageBytes: _imageBytes,
-                      size: 118,
+        child: EditorialLayout(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+            children: [
+              const EditorialHeading(
+                eyebrow: 'THE PROFILE DESK',
+                title: '让小美认识你。',
+                subtitle: '一个名字，一张熟悉的面孔。',
+              ),
+              const SizedBox(height: 28),
+              Center(
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Hero(
+                      tag: 'profile-avatar',
+                      child: ProfileAvatar(
+                        nickname: _nickname.text,
+                        imageUrl: widget.user.imageUrl,
+                        imageBytes: _imageBytes,
+                        size: 118,
+                      ),
                     ),
-                  ),
-                  Positioned(
-                    right: -2,
-                    bottom: 2,
-                    child: Material(
-                      color: AppPalette(context).ink,
-                      shape: const CircleBorder(),
-                      child: InkWell(
-                        customBorder: const CircleBorder(),
-                        onTap: _saving ? null : _pickImage,
-                        child: Padding(
-                          padding: const EdgeInsets.all(10),
-                          child: Icon(
+                    Positioned(
+                      right: -2,
+                      bottom: 2,
+                      child: Material(
+                        color: AppPalette(context).ink,
+                        shape: const CircleBorder(),
+                        child: IconButton(
+                          tooltip: '更换头像',
+                          onPressed: _saving ? null : _pickImage,
+                          constraints: const BoxConstraints(
+                            minWidth: 48,
+                            minHeight: 48,
+                          ),
+                          icon: Icon(
                             Icons.photo_camera_outlined,
                             size: 20,
                             color: AppPalette(context).background,
@@ -234,106 +236,112 @@ class _EditProfilePageState extends State<EditProfilePage> {
                         ),
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            TextButton(
-              onPressed: _saving ? null : _pickImage,
-              child: const Text('更换头像'),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              '公开资料',
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w500,
-                letterSpacing: 0.2,
-              ),
-            ),
-            const SizedBox(height: 12),
-            _EditCard(
-              children: [
-                TextField(
-                  controller: _nickname,
-                  enabled: !_saving,
-                  maxLength: 64,
-                  textInputAction: TextInputAction.done,
-                  onChanged: (_) => setState(() => _error = null),
-                  decoration: const InputDecoration(
-                    labelText: '昵称',
-                    hintText: '给自己取一个好记的名字',
-                    prefixIcon: Icon(Icons.alternate_email_rounded),
-                    counterText: '',
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    fillColor: Colors.transparent,
-                  ),
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                  leading: const Icon(Icons.mail_outline_rounded),
-                  title: const Text('登录邮箱'),
-                  subtitle: Text(widget.user.email),
-                  trailing: const Icon(Icons.lock_outline_rounded, size: 18),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '邮箱用于验证身份，暂不支持修改。新头像会经过安全上传并同步到你的账户。',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                height: 1.5,
-              ),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 18),
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.errorContainer,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.error_outline,
-                      color: Theme.of(context).colorScheme.onErrorContainer,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _error!,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onErrorContainer,
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
-            ],
-            const SizedBox(height: 28),
-            FilledButton(
-              onPressed: _saving ? null : _save,
-              style: FilledButton.styleFrom(
-                backgroundColor: AppPalette(context).ink,
-                foregroundColor: AppPalette(context).background,
+              const SizedBox(height: 14),
+              TextButton(
+                onPressed: _saving ? null : _pickImage,
+                child: const Text('更换头像'),
               ),
-              child: _saving
-                  ? const SizedBox.square(
-                      dimension: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.4,
-                        color: Colors.white,
+              const SizedBox(height: 24),
+              Text(
+                '公开资料',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 0.2,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _EditCard(
+                children: [
+                  TextField(
+                    controller: _nickname,
+                    enabled: !_saving,
+                    maxLength: 64,
+                    maxLengthEnforcement: MaxLengthEnforcement.none,
+                    textInputAction: TextInputAction.done,
+                    onChanged: (_) => setState(() => _error = null),
+                    decoration: InputDecoration(
+                      labelText: '昵称',
+                      hintText: '给自己取一个好记的名字',
+                      prefixIcon: const Icon(Icons.alternate_email_rounded),
+                      counterText: '${_nickname.text.trim().runes.length} / 64',
+                      errorText: _nickname.text.trim().runes.length > 64
+                          ? '昵称最多 64 个字符'
+                          : null,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      fillColor: Colors.transparent,
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                    leading: const Icon(Icons.mail_outline_rounded),
+                    title: const Text('登录邮箱'),
+                    subtitle: Text(widget.user.email),
+                    trailing: const Icon(Icons.lock_outline_rounded, size: 18),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '邮箱用于验证身份，暂不支持修改。新头像会经过安全上传并同步到你的账户。',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  height: 1.5,
+                ),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 18),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        color: Theme.of(context).colorScheme.onErrorContainer,
                       ),
-                    )
-                  : const Text('保存更改'),
-            ),
-          ],
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _error!,
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onErrorContainer,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 28),
+              FilledButton(
+                onPressed: _saving ? null : _save,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppPalette(context).ink,
+                  foregroundColor: AppPalette(context).background,
+                ),
+                child: _saving
+                    ? SizedBox.square(
+                        dimension: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.4,
+                          color: AppPalette(context).background,
+                        ),
+                      )
+                    : const Text('保存更改'),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -350,7 +358,6 @@ class _EditCard extends StatelessWidget {
     return Material(
       color: AppPalette(context).surface,
       elevation: 0,
-      shadowColor: const Color(0x141b1520),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),

@@ -97,6 +97,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
   Widget build(BuildContext context) {
     final p = VideoPalette(context);
     final task = _task;
+    final title = task?.displayTitle ?? '正在读取影片';
     return VideoTheme(
       child: Scaffold(
         backgroundColor: p.background,
@@ -132,16 +133,11 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    task?.title?.trim().isNotEmpty == true
-                        ? task!.displayTitle
-                        : task?.playableUri != null
-                        ? '这一刻，值得被珍藏。'
-                        : task?.shouldPoll == true
-                        ? '你的灵感，正在成片。'
-                        : '关于这部影片。',
+                    title,
                     style: TextStyle(
                       color: p.ink,
-                      fontSize: 26,
+                      fontSize: title.runes.length > 40 ? 20 : 26,
+                      height: 1.6,
                       letterSpacing: .1,
                       fontWeight: FontWeight.w500,
                     ),
@@ -177,7 +173,11 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                     ),
                   const SizedBox(height: 20),
                   if (_error != null) ...[
-                    VideoNotice(_error!, onRetry: _loading ? null : _refresh),
+                    VideoNotice(
+                      _error!,
+                      error: true,
+                      onRetry: _loading ? null : _refresh,
+                    ),
                     const SizedBox(height: 16),
                   ],
                   if (task != null) ...[
@@ -223,7 +223,10 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                                 number: '03',
                                 title: '保存影片',
                                 subtitle: switch (task.storageStatus) {
-                                  'STORED' => '已保存，可播放',
+                                  'STORED' =>
+                                    task.playableUri != null
+                                        ? '已保存，可播放'
+                                        : '已保存，播放地址待核对',
                                   'FAILED' => '保存待重试',
                                   'PENDING' => '正在保存',
                                   _ => '等待生成完成',
@@ -349,11 +352,7 @@ class _Stage extends StatelessWidget {
             ),
             child: Center(
               child: done
-                  ? const Icon(
-                      Icons.check_rounded,
-                      size: 17,
-                      color: VideoPalette.accent,
-                    )
+                  ? Icon(Icons.check_rounded, size: 17, color: p.accentInk)
                   : Text(
                       number,
                       style: TextStyle(color: p.muted, fontSize: 11),

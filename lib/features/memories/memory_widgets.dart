@@ -42,22 +42,31 @@ class MemoryNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = RecordPalette(context);
+    final colors = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: error ? palette.blush : palette.lavender,
+        color: error ? colors.errorContainer : palette.blush,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.info_outline_rounded, size: 18, color: palette.accent),
+          Icon(
+            error ? Icons.error_outline_rounded : Icons.info_outline_rounded,
+            size: 18,
+            color: error ? colors.onErrorContainer : palette.accent,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               message,
-              style: TextStyle(color: palette.ink, height: 1.6, fontSize: 13),
+              style: TextStyle(
+                color: error ? colors.onErrorContainer : palette.ink,
+                height: 1.6,
+                fontSize: 13,
+              ),
             ),
           ),
         ],
@@ -148,8 +157,8 @@ Future<bool> confirmMemoryDeletion(
           ),
           FilledButton(
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xffb43c50),
-              foregroundColor: Colors.white,
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
             ),
             onPressed: () => Navigator.pop(context, true),
             child: Text(all ? '确认清空全部记忆' : '确认删除'),

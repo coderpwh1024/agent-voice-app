@@ -41,29 +41,52 @@ class VideoResultList extends StatelessWidget {
   final Future<void> Function(VideoReference video, bool play)? onOpen;
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      const SizedBox(height: 12),
-      Text('共找到 ${results.total} 个视频，本页 ${results.items.length} 个'),
-      for (final (index, video) in results.items.indexed) ...[
+  Widget build(BuildContext context) {
+    final p = VideoPalette(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
         const SizedBox(height: 12),
-        Text('第 ${index + 1} 个'),
-        VideoMessageCard(
-          video: video,
-          config: config,
-          onOpen: onOpen == null ? null : (play) => onOpen!(video, play),
+        Text(
+          '共找到 ${results.total} 个视频，本页 ${results.items.length} 个',
+          style: TextStyle(color: p.muted, fontSize: 12, height: 1.7),
         ),
+        for (final (index, video) in results.items.indexed) ...[
+          const SizedBox(height: 12),
+          Text(
+            '第 ${index + 1} 个',
+            style: TextStyle(
+              color: p.accentInk,
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          VideoMessageCard(
+            video: video,
+            config: config,
+            onOpen: onOpen == null ? null : (play) => onOpen!(video, play),
+          ),
+        ],
+        if (results.items.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(
+              '没有找到这一页的视频，可以换个标题或内容关键词再说一次。',
+              style: TextStyle(color: p.muted, fontSize: 13, height: 1.7),
+            ),
+          ),
+        if (results.page < results.totalPages)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(
+              '还有更多结果，可以说“下一页”；查看某条可以说“查询第二个”。',
+              style: TextStyle(color: p.muted, fontSize: 12, height: 1.7),
+            ),
+          ),
       ],
-      if (results.items.isEmpty) const Text('没有找到这一页的视频，可以换个标题或内容关键词再说一次。'),
-      if (results.page < results.totalPages)
-        const Padding(
-          padding: EdgeInsets.only(top: 12),
-          child: Text('还有更多结果，可以说“下一页”；查看某条可以说“查询第二个”。'),
-        ),
-    ],
-  );
+    );
+  }
 }
 
 class VideoMessageCard extends StatelessWidget {
@@ -106,13 +129,11 @@ class VideoMessageCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (video.coverUri != null) ...[
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: VideoCover(uri: video.coverUri),
-                  ),
-                  const SizedBox(height: 14),
-                ],
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: VideoCover(uri: video.coverUri),
+                ),
+                const SizedBox(height: 14),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -126,7 +147,7 @@ class VideoMessageCard extends StatelessWidget {
                         ready
                             ? Icons.play_circle_outline_rounded
                             : Icons.movie_outlined,
-                        color: VideoPalette.accent,
+                        color: p.accentInk,
                         size: 26,
                       ),
                     ),
@@ -145,9 +166,9 @@ class VideoMessageCard extends StatelessWidget {
                           ),
                           const SizedBox(height: 5),
                           Text(
-                            video.title?.trim().isNotEmpty == true
-                                ? video.displayTitle
-                                : '视频 #${video.recordId.toString().padLeft(4, '0')}',
+                            video.displayTitle,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               color: p.ink,
                               fontSize: 16,
@@ -230,7 +251,7 @@ class _ConversationVideoPage extends StatelessWidget {
           top: false,
           child: VideoLayout(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(22, 14, 22, 32),
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
               children: [
                 const VideoPageHeading(
                   eyebrow: 'FROM OUR CONVERSATION',
@@ -249,9 +270,7 @@ class _ConversationVideoPage extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        video.title?.trim().isNotEmpty == true
-                            ? video.displayTitle
-                            : '视频 #${video.recordId.toString().padLeft(4, '0')}',
+                        video.displayTitle,
                         style: TextStyle(
                           color: p.ink,
                           fontWeight: FontWeight.w500,

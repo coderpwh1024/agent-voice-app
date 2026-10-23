@@ -257,9 +257,7 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
                   TextButton.icon(
                     onPressed: canWrite ? _delete : null,
                     style: TextButton.styleFrom(
-                      foregroundColor: palette.dark
-                          ? const Color(0xffffa9ba)
-                          : const Color(0xffb43c50),
+                      foregroundColor: Theme.of(context).colorScheme.error,
                     ),
                     icon: const Icon(Icons.delete_outline_rounded, size: 19),
                     label: const Text('删除这条记忆'),
@@ -383,7 +381,7 @@ class _MemoryEditPageState extends State<MemoryEditPage> {
         ),
         body: RecordLayout(
           child: ListView(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             children: [
               const EditorialHeading(
@@ -430,9 +428,12 @@ class _MemoryEditPageState extends State<MemoryEditPage> {
                       ? null
                       : _save,
                   icon: _saving
-                      ? const SizedBox.square(
+                      ? SizedBox.square(
                           dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: palette.background,
+                          ),
                         )
                       : const Icon(Icons.check_rounded),
                   label: Text(_saving ? '正在保存…' : '保存修改'),

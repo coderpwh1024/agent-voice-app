@@ -93,16 +93,8 @@ class VideoPageHeading extends EditorialHeading {
   });
 }
 
-class VideoLayout extends StatelessWidget {
-  const VideoLayout({super.key, required this.child});
-  final Widget child;
-  @override
-  Widget build(BuildContext context) => Center(
-    child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 760),
-      child: child,
-    ),
-  );
+class VideoLayout extends EditorialLayout {
+  const VideoLayout({super.key, required super.child});
 }
 
 class VideoEyebrow extends EditorialEyebrow {
@@ -119,8 +111,8 @@ class VideoStatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = VideoPalette(context);
-    final color = task.playableUri != null
-        ? (p.dark ? const Color(0xffa6c6af) : const Color(0xff477c67))
+    final color = task.status == 'FAILED' || task.storageStatus == 'FAILED'
+        ? Theme.of(context).colorScheme.error
         : p.accentInk;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -141,12 +133,14 @@ class VideoStatusBadge extends StatelessWidget {
             color: color,
           ),
           const SizedBox(width: 5),
-          Text(
-            task.label,
-            style: TextStyle(
-              color: color,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
+          Flexible(
+            child: Text(
+              task.label,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ],
@@ -161,16 +155,19 @@ class VideoNotice extends StatelessWidget {
     super.key,
     this.onRetry,
     this.retryLabel = '重试',
+    this.error = false,
   });
   final String message, retryLabel;
   final VoidCallback? onRetry;
+  final bool error;
   @override
   Widget build(BuildContext context) {
     final p = VideoPalette(context);
+    final colors = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: p.blush,
+        color: error ? colors.errorContainer : p.blush,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
@@ -179,16 +176,22 @@ class VideoNotice extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(
-                Icons.info_outline_rounded,
+              Icon(
+                error
+                    ? Icons.error_outline_rounded
+                    : Icons.info_outline_rounded,
                 size: 19,
-                color: VideoPalette.accent,
+                color: error ? colors.onErrorContainer : p.accentInk,
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   message,
-                  style: TextStyle(color: p.ink, height: 1.6, fontSize: 13),
+                  style: TextStyle(
+                    color: error ? colors.onErrorContainer : p.ink,
+                    height: 1.6,
+                    fontSize: 13,
+                  ),
                 ),
               ),
             ],
@@ -196,7 +199,13 @@ class VideoNotice extends StatelessWidget {
           if (onRetry != null)
             Align(
               alignment: Alignment.centerRight,
-              child: TextButton(onPressed: onRetry, child: Text(retryLabel)),
+              child: TextButton(
+                onPressed: onRetry,
+                style: TextButton.styleFrom(
+                  foregroundColor: error ? colors.onErrorContainer : p.ink,
+                ),
+                child: Text(retryLabel),
+              ),
             ),
         ],
       ),
@@ -223,9 +232,7 @@ class VideoCover extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: p.dark
-              ? [const Color(0xff30372c), const Color(0xff232820)]
-              : [const Color(0xffefeee6), const Color(0xffdbded2)],
+          colors: p.dark ? [p.blush, p.surface] : [p.background, p.blush],
         ),
       ),
       child: Center(
@@ -234,13 +241,7 @@ class VideoCover extends StatelessWidget {
           children: [
             Icon(icon, size: 32, color: p.ink.withValues(alpha: .5)),
             const SizedBox(height: 8),
-            Text(
-              label,
-              style: TextStyle(
-                color: p.ink.withValues(alpha: .65),
-                fontSize: 11,
-              ),
-            ),
+            Text(label, style: TextStyle(color: p.muted, fontSize: 11)),
           ],
         ),
       ),

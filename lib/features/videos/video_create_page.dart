@@ -22,6 +22,7 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
   final _title = TextEditingController();
   final _cover = TextEditingController();
   Uri? _previewCover;
+  String? _coverPreviewError;
   final _form = GlobalKey<FormState>();
   late final VideoApi _api;
   String _model = VideoDraft.models.first,
@@ -265,7 +266,7 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            '选填，让每一段灵感都更容易被找到。',
+                            '标题可选；未填写时，会从画面描述中提取。',
                             style: TextStyle(
                               color: p.muted,
                               fontSize: 12,
@@ -282,7 +283,7 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                             decoration: const InputDecoration(
                               labelText: '视频标题（可选）',
                               hintText: '比如：在海边，等一场日落',
-                              helperText: '最多 200 个字符',
+                              helperText: '最多 200 个字符；最终标题以任务返回结果为准',
                             ),
                             validator: VideoDraft.titleError,
                           ),
@@ -295,16 +296,21 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                             autocorrect: false,
                             maxLines: 3,
                             minLines: 1,
-                            decoration: const InputDecoration(
-                              labelText: '封面 URL（可选）',
+                            decoration: InputDecoration(
+                              labelText: '暂存封面 URL（可选）',
                               hintText: 'https://…/cover.jpg',
-                              helperText: '使用可公开访问的 HTTP/HTTPS 图片地址',
-                              helperMaxLines: 2,
+                              helperText: '可留空；公开图片仅作暂存，成片后会自动替换为视频画面封面。',
+                              helperMaxLines: 6,
+                              errorText: _coverPreviewError,
                             ),
                             validator: VideoDraft.coverError,
                             onChanged: (_) {
-                              if (_previewCover != null) {
-                                setState(() => _previewCover = null);
+                              if (_previewCover != null ||
+                                  _coverPreviewError != null) {
+                                setState(() {
+                                  _previewCover = null;
+                                  _coverPreviewError = null;
+                                });
                               }
                             },
                           ),
@@ -315,7 +321,13 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                               onPressed: _locked
                                   ? null
                                   : () {
-                                      if (_form.currentState!.validate()) {
+                                      final error = VideoDraft.coverError(
+                                        _cover.text,
+                                      );
+                                      setState(
+                                        () => _coverPreviewError = error,
+                                      );
+                                      if (error == null) {
                                         FocusScope.of(context).unfocus();
                                         setState(
                                           () => _previewCover =
@@ -395,8 +407,8 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                               ),
                               Text(
                                 '$_duration 秒',
-                                style: const TextStyle(
-                                  color: VideoPalette.accent,
+                                style: TextStyle(
+                                  color: p.accentInk,
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
@@ -408,7 +420,7 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                             max: 15,
                             divisions: 12,
                             label: '$_duration 秒',
-                            activeColor: VideoPalette.accent,
+                            activeColor: p.accentInk,
                             onChanged: _locked
                                 ? null
                                 : (v) => setState(() => _duration = v.round()),
@@ -458,7 +470,7 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                     ),
                     const SizedBox(height: 20),
                     if (_error != null) ...[
-                      VideoNotice(_error!),
+                      VideoNotice(_error!, error: true),
                       const SizedBox(height: 16),
                     ],
                     FilledButton.icon(
@@ -473,10 +485,13 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                         ),
                       ),
                       icon: _submitting
-                          ? const SizedBox(
+                          ? SizedBox(
                               width: 18,
                               height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: p.background,
+                              ),
                             )
                           : const Icon(Icons.auto_awesome_rounded, size: 19),
                       label: Text(

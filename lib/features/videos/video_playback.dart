@@ -25,13 +25,13 @@ class _VideoPlaybackState extends State<VideoPlayback>
     with WidgetsBindingObserver {
   VideoPlayerController? _controller;
   String? _error;
-  bool _ready = false;
+  bool _ready = false, _started = false;
   int _generation = 0;
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _initialize();
+    if (widget.autoPlay) _initialize();
   }
 
   @override
@@ -49,6 +49,7 @@ class _VideoPlaybackState extends State<VideoPlayback>
     }
     if (!mounted || generation != _generation) return;
     setState(() {
+      _started = true;
       _error = null;
       _ready = false;
     });
@@ -62,8 +63,7 @@ class _VideoPlaybackState extends State<VideoPlayback>
       if (!mounted || generation != _generation) return;
       controller.addListener(_changed);
       setState(() => _ready = true);
-      if (widget.autoPlay &&
-          WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+      if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
         await controller.play();
       }
     } catch (_) {
@@ -112,11 +112,49 @@ class _VideoPlaybackState extends State<VideoPlayback>
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
-    if (_error != null) return VideoNotice(_error!, onRetry: _initialize);
+    if (_error != null) {
+      return VideoNotice(_error!, error: true, onRetry: _initialize);
+    }
+    if (!_started) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: VideoCover(
+          uri: widget.coverUri,
+          child: Center(
+            child: IconButton.filled(
+              tooltip: '播放影片',
+              onPressed: _initialize,
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.black54,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(56, 56),
+              ),
+              iconSize: 36,
+              icon: const Icon(Icons.play_arrow_rounded),
+            ),
+          ),
+        ),
+      );
+    }
     if (!_ready || controller == null) {
-      return const SizedBox(
-        height: 230,
-        child: Center(child: CircularProgressIndicator()),
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: VideoCover(
+          uri: widget.coverUri,
+          child: Center(
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: VideoPalette(context).surface,
+                shape: BoxShape.circle,
+              ),
+              child: const SizedBox.square(
+                dimension: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          ),
+        ),
       );
     }
     return ClipRRect(
@@ -165,33 +203,62 @@ class _VideoPlaybackState extends State<VideoPlayback>
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 6, 16, 8),
-              child: Row(
+              child: Column(
                 children: [
-                  IconButton(
-                    tooltip: controller.value.isPlaying ? '暂停影片' : '播放影片',
-                    onPressed: _toggle,
-                    icon: Icon(
-                      controller.value.isPlaying
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
-                      color: Colors.white,
+                  SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      activeTrackColor: Colors.white,
+                      thumbColor: Colors.white,
+                      inactiveTrackColor: Colors.white30,
+                      trackHeight: 2,
+                    ),
+                    child: Slider(
+                      value: controller.value.position.inMilliseconds
+                          .toDouble()
+                          .clamp(
+                            0,
+                            controller.value.duration.inMilliseconds.toDouble(),
+                          ),
+                      max: controller.value.duration.inMilliseconds
+                          .toDouble()
+                          .clamp(1, double.infinity),
+                      semanticFormatterCallback: (value) =>
+                          '${(value / 1000).round()} 秒',
+                      onChanged: (value) async {
+                        try {
+                          await controller.seekTo(
+                            Duration(milliseconds: value.round()),
+                          );
+                        } catch (_) {
+                          if (mounted) setState(() => _error = '暂时无法调整进度，请重试');
+                        }
+                      },
                     ),
                   ),
-                  Expanded(
-                    child: VideoProgressIndicator(
-                      controller,
-                      allowScrubbing: true,
-                      colors: const VideoProgressColors(
-                        playedColor: Color(0xffd5dcc6),
-                        bufferedColor: Colors.white30,
-                        backgroundColor: Colors.white12,
+                  Row(
+                    children: [
+                      IconButton(
+                        tooltip: controller.value.isPlaying ? '暂停影片' : '播放影片',
+                        onPressed: _toggle,
+                        icon: Icon(
+                          controller.value.isPlaying
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded,
+                          color: Colors.white,
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    '${controller.value.position.inSeconds} / ${controller.value.duration.inSeconds}s',
-                    style: const TextStyle(color: Colors.white70, fontSize: 11),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${controller.value.position.inSeconds} / ${controller.value.duration.inSeconds}s',
+                          textAlign: TextAlign.end,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
