@@ -48,11 +48,11 @@ class PersonalLibraryPage extends StatelessWidget {
       ),
       body: RecordLayout(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 10, 20, 32),
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
           children: [
             const RecordHero(
               eyebrow: 'YOUR PERSONAL COLLECTION',
-              title: '关于你的，\n都在这里。',
+              title: '关于你的，都在这里。',
               description: '有些话值得回看，有些小事值得记住。',
               icon: Icons.collections_bookmark_outlined,
             ),
@@ -62,7 +62,7 @@ class PersonalLibraryPage extends StatelessWidget {
               style: TextStyle(
                 color: palette.ink,
                 fontSize: 17,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w500,
               ),
             ),
             const SizedBox(height: 14),
@@ -140,13 +140,13 @@ class _CollectionCard extends StatelessWidget {
       color: palette.surface,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(10),
         side: BorderSide(color: palette.border),
       ),
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(22),
+          padding: const EdgeInsets.all(20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -156,7 +156,7 @@ class _CollectionCard extends StatelessWidget {
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: color,
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(6),
                     ),
                     child: Icon(icon, color: palette.accent, size: 24),
                   ),
@@ -177,8 +177,9 @@ class _CollectionCard extends StatelessWidget {
                         Text(
                           title,
                           style: TextStyle(
+                            fontFamily: 'StudioSerif',
                             color: palette.ink,
-                            fontWeight: FontWeight.w800,
+                            fontWeight: FontWeight.w500,
                             fontSize: 20,
                           ),
                         ),

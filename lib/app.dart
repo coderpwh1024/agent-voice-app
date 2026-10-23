@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'core/theme/app_theme.dart';
+
 import 'core/api/api_models.dart';
 import 'core/auth/auth_session_store.dart';
 import 'core/config/app_config.dart';
@@ -125,7 +127,8 @@ class _AgentVoiceAppState extends State<AgentVoiceApp> {
           ? saved.config
           : saved.config.copyWith(baseUrl: packagedBaseUrl);
       _controller.updateConfig(restoredConfig);
-      if (packagedBaseUrl.isNotEmpty && packagedBaseUrl != saved.config.baseUrl) {
+      if (packagedBaseUrl.isNotEmpty &&
+          packagedBaseUrl != saved.config.baseUrl) {
         unawaited(_persistBaseUrl(packagedBaseUrl));
       }
       _currentUser = saved.user;
@@ -193,101 +196,8 @@ class _AgentVoiceAppState extends State<AgentVoiceApp> {
     return MaterialApp(
       title: 'Agent Voice',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xffd87568),
-          brightness: Brightness.light,
-          surface: const Color(0xfffffcfa),
-        ),
-        scaffoldBackgroundColor: const Color(0xfffbf8f4),
-        useMaterial3: true,
-        inputDecorationTheme: InputDecorationTheme(
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Color(0xffeadfd9)),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: Color(0xffd87568), width: 1.4),
-          ),
-          filled: true,
-          fillColor: const Color(0xfffffaf7),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 15,
-          ),
-        ),
-        filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(
-            minimumSize: const Size(0, 54),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            textStyle: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-        appBarTheme: const AppBarTheme(
-          centerTitle: false,
-          backgroundColor: Color(0xfffbf8f4),
-          surfaceTintColor: Colors.transparent,
-          titleTextStyle: TextStyle(
-            color: Color(0xff3f302c),
-            fontSize: 21,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.5,
-          ),
-          iconTheme: IconThemeData(color: Color(0xff4b3a35)),
-        ),
-        cardTheme: CardThemeData(
-          elevation: 0,
-          color: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-            side: const BorderSide(color: Color(0xffeee5df)),
-          ),
-        ),
-      ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xffe58b7d),
-          brightness: Brightness.dark,
-          surface: const Color(0xff211d1b),
-        ),
-        scaffoldBackgroundColor: const Color(0xff171412),
-        useMaterial3: true,
-        inputDecorationTheme: InputDecorationTheme(
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-          filled: true,
-          fillColor: const Color(0xff2d2825),
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xff171412),
-          surfaceTintColor: Colors.transparent,
-          titleTextStyle: TextStyle(
-            color: Color(0xfffff8f2),
-            fontSize: 21,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.5,
-          ),
-          iconTheme: IconThemeData(color: Color(0xfffff8f2)),
-        ),
-        filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(
-            minimumSize: const Size(0, 54),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            textStyle: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ),
+      theme: AppTheme.build(Brightness.light),
+      darkTheme: AppTheme.build(Brightness.dark),
       home: _restoringSession
           ? const _SessionSplash()
           : _currentUser == null

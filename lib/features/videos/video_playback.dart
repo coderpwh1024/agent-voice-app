@@ -120,9 +120,9 @@ class _VideoPlaybackState extends State<VideoPlayback>
       );
     }
     return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(8),
       child: ColoredBox(
-        color: const Color(0xff19151e),
+        color: const Color(0xff191c17),
         child: Column(
           children: [
             ConstrainedBox(
@@ -182,7 +182,7 @@ class _VideoPlaybackState extends State<VideoPlayback>
                       controller,
                       allowScrubbing: true,
                       colors: const VideoProgressColors(
-                        playedColor: Color(0xffe6a6bd),
+                        playedColor: Color(0xffd5dcc6),
                         bufferedColor: Colors.white30,
                         backgroundColor: Colors.white12,
                       ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/memory_models.dart';
+import '../../core/theme/editorial_widgets.dart';
 import '../conversations/chat_record_widgets.dart';
 import 'memory_history_page.dart';
 import 'memory_widgets.dart';
@@ -143,7 +144,7 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
             onRefresh: _load,
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(20, 10, 20, 32),
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
               children: [
                 const RecordHero(
                   eyebrow: 'YOUR MEMORY, YOUR WORDS',
@@ -174,7 +175,7 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
                       color: palette.surface,
-                      borderRadius: BorderRadius.circular(24),
+                      borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: palette.border),
                     ),
                     child: Column(
@@ -185,7 +186,7 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
                           style: TextStyle(
                             color: palette.accent,
                             fontSize: 12,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                         const SizedBox(height: 16),
@@ -385,18 +386,10 @@ class _MemoryEditPageState extends State<MemoryEditPage> {
             padding: const EdgeInsets.all(20),
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             children: [
-              Text(
-                '写下现在的你',
-                style: TextStyle(
-                  color: palette.ink,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                '保持具体、准确。保存后，小美将使用更新后的记忆。',
-                style: TextStyle(color: palette.muted, height: 1.7),
+              const EditorialHeading(
+                eyebrow: 'THE MEMORY DESK',
+                title: '写下现在的你',
+                subtitle: '保持具体、准确。保存后，小美将使用更新后的记忆。',
               ),
               const SizedBox(height: 24),
               TextField(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_models.dart';
 import '../../core/config/app_config.dart';
+import '../../core/theme/editorial_widgets.dart';
 
 class SettingsSheet extends StatefulWidget {
   const SettingsSheet({
@@ -49,11 +50,10 @@ class _SettingsSheetState extends State<SettingsSheet> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('连接设置', style: Theme.of(context).textTheme.headlineSmall),
-              const SizedBox(height: 8),
-              Text(
-                '登录凭据已加密保存在系统安全存储中。',
-                style: Theme.of(context).textTheme.bodySmall,
+              const EditorialHeading(
+                eyebrow: 'CONNECTION',
+                title: '连接设置',
+                subtitle: '登录凭据已加密保存在系统安全存储中。',
               ),
               if (widget.user != null) ...[
                 const SizedBox(height: 18),

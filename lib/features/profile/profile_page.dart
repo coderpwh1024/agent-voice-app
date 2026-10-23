@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_theme.dart';
+import '../../core/theme/editorial_widgets.dart';
+
 import '../../core/api/api_client.dart';
 import '../../core/api/api_models.dart';
 import '../../core/config/app_config.dart';
@@ -97,13 +100,13 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xfffbfafc),
+      backgroundColor: AppPalette(context).background,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         title: const Text(
           '个人主页',
-          style: TextStyle(fontWeight: FontWeight.w700),
+          style: TextStyle(fontWeight: FontWeight.w500),
         ),
         actions: [
           IconButton(
@@ -115,19 +118,18 @@ class _ProfilePageState extends State<ProfilePage> {
         ],
       ),
       body: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: <Color>[Color(0xfffff8fc), Color(0xfffbfafc)],
-          ),
-        ),
+        decoration: BoxDecoration(color: AppPalette(context).background),
         child: RefreshIndicator(
           onRefresh: _refresh,
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(22, 10, 22, 40),
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
             children: [
+              const EditorialHeading(
+                eyebrow: 'YOUR PERSONAL SPACE',
+                title: '关于自己，慢慢记录。',
+              ),
+              const SizedBox(height: 28),
               Center(
                 child: Hero(
                   tag: 'profile-avatar',
@@ -143,7 +145,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 _user.nickname,
                 textAlign: TextAlign.center,
                 style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w500,
                   letterSpacing: -0.7,
                 ),
               ),
@@ -163,22 +165,22 @@ class _ProfilePageState extends State<ProfilePage> {
                     vertical: 7,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xffefebff),
-                    borderRadius: BorderRadius.circular(999),
+                    color: AppPalette(context).blush,
+                    borderRadius: BorderRadius.circular(4),
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
                         Icons.verified_rounded,
                         size: 16,
-                        color: Color(0xff6941c6),
+                        color: AppPalette(context).accentInk,
                       ),
                       SizedBox(width: 6),
                       Text(
                         '邮箱已验证',
                         style: TextStyle(
-                          color: Color(0xff5f3aae),
+                          color: AppPalette(context).accentInk,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -193,8 +195,8 @@ class _ProfilePageState extends State<ProfilePage> {
                     child: FilledButton.icon(
                       onPressed: _edit,
                       style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xff17151a),
-                        foregroundColor: Colors.white,
+                        backgroundColor: AppPalette(context).ink,
+                        foregroundColor: AppPalette(context).background,
                       ),
                       icon: const Icon(Icons.edit_outlined, size: 19),
                       label: const Text('编辑个人资料'),
@@ -217,7 +219,7 @@ class _ProfilePageState extends State<ProfilePage> {
               Text(
                 '账户信息',
                 style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
               const SizedBox(height: 12),
@@ -246,7 +248,7 @@ class _ProfilePageState extends State<ProfilePage> {
               Text(
                 '更多',
                 style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
               const SizedBox(height: 12),
@@ -292,13 +294,13 @@ class _ProfileCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white.withValues(alpha: 0.96),
-      elevation: 1,
+      color: AppPalette(context).surface,
+      elevation: 0,
       shadowColor: const Color(0x14211529),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(22),
-        side: const BorderSide(color: Color(0xffece9ef)),
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: AppPalette(context).border),
       ),
       child: Column(children: children),
     );
@@ -331,7 +333,7 @@ class _InfoRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
       child: Row(
         children: [
-          Icon(icon, size: 21, color: const Color(0xff6d6672)),
+          Icon(icon, size: 21, color: AppPalette(context).muted),
           const SizedBox(width: 18),
           Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
           const Spacer(),
@@ -366,9 +368,9 @@ class _ActionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = destructive ? const Color(0xffd43654) : null;
+    final color = destructive ? Theme.of(context).colorScheme.error : null;
     return ListTile(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       leading: Icon(icon, color: color),
       title: Text(
         label,
@@ -391,12 +393,15 @@ class _StatusCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
       decoration: BoxDecoration(
-        color: const Color(0xffffeef1),
-        borderRadius: BorderRadius.circular(18),
+        color: Theme.of(context).colorScheme.errorContainer,
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         children: [
-          const Icon(Icons.cloud_off_outlined, color: Color(0xffc12f4c)),
+          Icon(
+            Icons.cloud_off_outlined,
+            color: Theme.of(context).colorScheme.onErrorContainer,
+          ),
           const SizedBox(width: 10),
           Expanded(child: Text(message)),
           TextButton(onPressed: onRetry, child: const Text('重试')),

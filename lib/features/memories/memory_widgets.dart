@@ -47,7 +47,7 @@ class MemoryNotice extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: error ? palette.blush : palette.lavender,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/api_models.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/theme/editorial_widgets.dart';
 
 String recordDateLabel(String recordDate, {DateTime? now}) {
   final date = DateTime.parse('${recordDate}T00:00:00Z');
@@ -79,21 +81,10 @@ String recordErrorMessage(Object error) {
   return '暂时无法读取聊天记录，请稍后重试。';
 }
 
-class RecordPalette {
-  RecordPalette(BuildContext context)
-    : dark = Theme.of(context).brightness == Brightness.dark;
-
-  final bool dark;
-  Color get background =>
-      dark ? const Color(0xff191719) : const Color(0xfffcfaf8);
-  Color get surface => dark ? const Color(0xff242124) : Colors.white;
-  Color get ink => dark ? const Color(0xfff7f0ed) : const Color(0xff302b30);
-  Color get muted => dark ? const Color(0xffb9afb5) : const Color(0xff82777e);
-  Color get border => dark ? const Color(0xff3d343b) : const Color(0xffefe8e6);
-  Color get accent => dark ? const Color(0xfff3afa2) : const Color(0xffb86f61);
-  Color get blush => dark ? const Color(0xff3d2c30) : const Color(0xffffeee9);
-  Color get lavender =>
-      dark ? const Color(0xff302c41) : const Color(0xfff2edfa);
+class RecordPalette extends AppPalette {
+  RecordPalette(super.context);
+  Color get accent => accentInk;
+  Color get lavender => blush;
 }
 
 class RecordLayout extends StatelessWidget {
@@ -132,61 +123,21 @@ class RecordHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = RecordPalette(context);
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [palette.blush, palette.lavender],
-        ),
-        borderRadius: BorderRadius.circular(28),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  eyebrow,
-                  style: TextStyle(
-                    color: palette.accent,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 2,
-                  ),
-                ),
-              ),
-              Icon(icon, color: palette.accent, size: 25),
-            ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        EditorialHeading(eyebrow: eyebrow, title: title, subtitle: description),
+        if (stats.isNotEmpty) ...[
+          const SizedBox(height: 18),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: stats.map((label) => RecordTag(label: label)).toList(),
           ),
-          const SizedBox(height: 20),
-          Text(
-            title,
-            style: TextStyle(
-              color: palette.ink,
-              fontSize: 28,
-              height: 1.3,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.8,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            description,
-            style: TextStyle(color: palette.muted, height: 1.6, fontSize: 13),
-          ),
-          if (stats.isNotEmpty) ...[
-            const SizedBox(height: 20),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: stats.map((label) => RecordTag(label: label)).toList(),
-            ),
-          ],
         ],
-      ),
+        const SizedBox(height: 24),
+        Divider(color: palette.border, height: 1),
+      ],
     );
   }
 }
@@ -201,15 +152,15 @@ class RecordTag extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
-        color: palette.surface.withValues(alpha: 0.65),
-        borderRadius: BorderRadius.circular(99),
+        color: palette.blush,
+        borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
         label,
         style: TextStyle(
           color: palette.ink,
           fontSize: 12,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w500,
         ),
       ),
     );
@@ -251,7 +202,7 @@ class RecordStatus extends StatelessWidget {
             style: TextStyle(
               color: palette.ink,
               fontSize: 18,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w500,
             ),
           ),
           const SizedBox(height: 10),
@@ -298,7 +249,7 @@ class RecordLoading extends StatelessWidget {
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: palette.surface,
-              borderRadius: BorderRadius.circular(22),
+              borderRadius: BorderRadius.circular(10),
             ),
             child: Row(
               children: [
@@ -307,7 +258,7 @@ class RecordLoading extends StatelessWidget {
                   height: 52,
                   decoration: BoxDecoration(
                     color: palette.border,
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(6),
                   ),
                 ),
                 const SizedBox(width: 18),

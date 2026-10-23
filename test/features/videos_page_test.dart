@@ -5,6 +5,7 @@ import 'package:agent_voice_app/features/videos/data/video_models.dart';
 import 'package:agent_voice_app/features/videos/video_create_page.dart';
 import 'package:agent_voice_app/features/videos/video_detail_page.dart';
 import 'package:agent_voice_app/features/videos/video_studio_page.dart';
+import 'package:agent_voice_app/features/videos/video_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -107,6 +108,27 @@ void main() {
       await tap(tester, find.text('加载更多作品'));
       expect(find.text('影片 #0001'), findsOneWidget);
       expect(find.textContaining('offline'), findsOneWidget);
+    },
+  );
+  testWidgets(
+    'gallery view switches without refetching or losing loaded works',
+    (tester) async {
+      final api = FakeVideoApi();
+      addTearDown(api.close);
+      await tester.pumpWidget(wrap(VideoStudioPage(config: config, api: api)));
+      await tester.pumpAndSettle();
+      await tap(tester, find.byTooltip('列表视图'));
+      expect(api.calls.length, 1);
+      expect(
+        tester
+            .widgetList<VideoCover>(find.byType(VideoCover))
+            .every((cover) => cover.aspectRatio == 16 / 9),
+        isTrue,
+      );
+      await tap(tester, find.byTooltip('网格视图'));
+      expect(api.calls.length, 1);
+      expect(find.byType(VideoWordmark), findsOneWidget);
+      expect(tester.takeException(), isNull);
     },
   );
   testWidgets(

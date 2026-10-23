@@ -128,9 +128,14 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('保存更改'), findsOneWidget);
     expect(find.text('公开资料'), findsOneWidget);
     expect(find.text('更换头像'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('保存更改'),
+      180,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('保存更改'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

@@ -1,6 +1,10 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+
+import '../../core/theme/app_theme.dart';
+import '../../core/theme/editorial_widgets.dart';
+
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/api/api_client.dart';
@@ -169,20 +173,20 @@ class _EditProfilePageState extends State<EditProfilePage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xfffbfafc),
+      backgroundColor: AppPalette(context).background,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         title: const Text(
           '编辑个人资料',
-          style: TextStyle(fontWeight: FontWeight.w700),
+          style: TextStyle(fontWeight: FontWeight.w500),
         ),
         actions: [
           TextButton(
             onPressed: _saving ? null : _save,
             child: const Text(
               '完成',
-              style: TextStyle(fontWeight: FontWeight.w700),
+              style: TextStyle(fontWeight: FontWeight.w500),
             ),
           ),
           const SizedBox(width: 8),
@@ -190,8 +194,14 @@ class _EditProfilePageState extends State<EditProfilePage> {
       ),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(22, 12, 22, 36),
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
           children: [
+            const EditorialHeading(
+              eyebrow: 'THE PROFILE DESK',
+              title: '让小美认识你。',
+              subtitle: '一个名字，一张熟悉的面孔。',
+            ),
+            const SizedBox(height: 28),
             Center(
               child: Stack(
                 clipBehavior: Clip.none,
@@ -209,17 +219,17 @@ class _EditProfilePageState extends State<EditProfilePage> {
                     right: -2,
                     bottom: 2,
                     child: Material(
-                      color: const Color(0xff17151a),
+                      color: AppPalette(context).ink,
                       shape: const CircleBorder(),
                       child: InkWell(
                         customBorder: const CircleBorder(),
                         onTap: _saving ? null : _pickImage,
-                        child: const Padding(
-                          padding: EdgeInsets.all(10),
+                        child: Padding(
+                          padding: const EdgeInsets.all(10),
                           child: Icon(
                             Icons.photo_camera_outlined,
                             size: 20,
-                            color: Colors.white,
+                            color: AppPalette(context).background,
                           ),
                         ),
                       ),
@@ -237,7 +247,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
             Text(
               '公开资料',
               style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w500,
                 letterSpacing: 0.2,
               ),
             ),
@@ -284,17 +294,22 @@ class _EditProfilePageState extends State<EditProfilePage> {
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: const Color(0xffffeef1),
-                  borderRadius: BorderRadius.circular(16),
+                  color: Theme.of(context).colorScheme.errorContainer,
+                  borderRadius: BorderRadius.circular(6),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.error_outline, color: Color(0xffc12f4c)),
+                    Icon(
+                      Icons.error_outline,
+                      color: Theme.of(context).colorScheme.onErrorContainer,
+                    ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         _error!,
-                        style: const TextStyle(color: Color(0xff8d1f36)),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onErrorContainer,
+                        ),
                       ),
                     ),
                   ],
@@ -305,8 +320,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
             FilledButton(
               onPressed: _saving ? null : _save,
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xff17151a),
-                foregroundColor: Colors.white,
+                backgroundColor: AppPalette(context).ink,
+                foregroundColor: AppPalette(context).background,
               ),
               child: _saving
                   ? const SizedBox.square(
@@ -333,13 +348,13 @@ class _EditCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white,
-      elevation: 1,
+      color: AppPalette(context).surface,
+      elevation: 0,
       shadowColor: const Color(0x141b1520),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(22),
-        side: const BorderSide(color: Color(0xffece9ef)),
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: AppPalette(context).border),
       ),
       child: Column(children: children),
     );

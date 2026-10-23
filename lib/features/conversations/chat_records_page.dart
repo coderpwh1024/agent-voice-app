@@ -129,7 +129,7 @@ class _ChatRecordsPageState extends State<ChatRecordsPage> {
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
                 sliver: SliverList.list(
                   children: [
                     RecordHero(
@@ -151,7 +151,7 @@ class _ChatRecordsPageState extends State<ChatRecordsPage> {
                           '与你的助手',
                           style: TextStyle(
                             color: palette.ink,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                         const SizedBox(width: 16),
@@ -168,10 +168,10 @@ class _ChatRecordsPageState extends State<ChatRecordsPage> {
                               fillColor: palette.surface,
                               filled: true,
                               border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
+                                borderRadius: BorderRadius.circular(6),
                               ),
                               enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
+                                borderRadius: BorderRadius.circular(6),
                                 borderSide: BorderSide(color: palette.border),
                               ),
                             ),
@@ -201,7 +201,7 @@ class _ChatRecordsPageState extends State<ChatRecordsPage> {
                             style: TextStyle(
                               color: palette.ink,
                               fontSize: 18,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ),
@@ -231,7 +231,7 @@ class _ChatRecordsPageState extends State<ChatRecordsPage> {
               ),
               if (!_loading && _error == null)
                 SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
                   sliver: SliverList.builder(
                     itemCount: _records.length,
                     itemBuilder: (context, index) => Padding(
@@ -264,7 +264,7 @@ class _RecordDayCard extends StatelessWidget {
       color: palette.surface,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(10),
         side: BorderSide(color: palette.border),
       ),
       child: InkWell(
@@ -278,7 +278,7 @@ class _RecordDayCard extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(
                   color: palette.blush,
-                  borderRadius: BorderRadius.circular(17),
+                  borderRadius: BorderRadius.circular(6),
                 ),
                 child: Column(
                   children: [
@@ -295,7 +295,7 @@ class _RecordDayCard extends StatelessWidget {
                       style: TextStyle(
                         color: palette.ink,
                         fontSize: 24,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w500,
                         height: 1.2,
                       ),
                     ),
@@ -312,7 +312,7 @@ class _RecordDayCard extends StatelessWidget {
                       style: TextStyle(
                         color: palette.ink,
                         fontSize: 16,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                     const SizedBox(height: 6),

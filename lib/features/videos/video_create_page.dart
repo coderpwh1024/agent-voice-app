@@ -85,7 +85,9 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
       setState(() => _error = error);
       return;
     }
-    if (!_form.currentState!.validate()) return;
+    if (!_form.currentState!.validate()) {
+      return;
+    }
     FocusScope.of(context).unfocus();
     setState(() {
       _submittedDraft = draft;
@@ -156,349 +158,347 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
   @override
   Widget build(BuildContext context) {
     final p = VideoPalette(context);
-    return PopScope(
-      canPop: !_submitting,
-      child: Scaffold(
-        backgroundColor: p.background,
-        appBar: AppBar(
-          title: const Text('创作视频'),
+    return VideoTheme(
+      child: PopScope(
+        canPop: !_submitting,
+        child: Scaffold(
           backgroundColor: p.background,
-          surfaceTintColor: Colors.transparent,
-        ),
-        body: SafeArea(
-          top: false,
-          child: VideoLayout(
-            child: Form(
-              key: _form,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(22, 12, 22, 32),
-                children: [
-                  const VideoEyebrow('FROM A THOUGHT TO A FILM'),
-                  const SizedBox(height: 10),
-                  Text(
-                    '让想象，\n有了下一帧。',
-                    style: TextStyle(
-                      fontSize: 32,
-                      height: 1.3,
-                      letterSpacing: -1.2,
-                      fontWeight: FontWeight.w800,
-                      color: p.ink,
+          appBar: AppBar(
+            title: const Text('创作视频'),
+            backgroundColor: p.background,
+            surfaceTintColor: Colors.transparent,
+          ),
+          body: SafeArea(
+            top: false,
+            child: VideoLayout(
+              child: Form(
+                key: _form,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+                  children: [
+                    const VideoPageHeading(
+                      eyebrow: 'THE CREATIVE DESK',
+                      title: '从一个画面开始。',
+                      subtitle: '文字是起点，下一帧交给想象。',
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    '一句描述，一段属于你的电影。',
-                    style: TextStyle(color: p.muted, height: 1.6),
-                  ),
-                  const SizedBox(height: 24),
-                  VideoPanel(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const VideoEyebrow('01 / YOUR SCENE'),
-                        const SizedBox(height: 14),
-                        Text(
-                          '想看见什么？',
-                          style: TextStyle(
-                            color: p.ink,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
+                    const SizedBox(height: 28),
+                    VideoPanel(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const VideoEyebrow('01 / SCENE'),
+                          const SizedBox(height: 14),
+                          Text(
+                            '想看见什么？',
+                            style: TextStyle(
+                              color: p.ink,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextFormField(
-                          key: const Key('video-prompt'),
-                          controller: _prompt,
-                          enabled: !_locked,
-                          minLines: 5,
-                          maxLines: 9,
-                          decoration: const InputDecoration(
-                            hintText: '比如：落日洒进海边咖啡馆，白色纱帘随风轻轻摆动，镜头缓慢推进，温暖的胶片质感。',
-                            hintStyle: TextStyle(height: 1.8, fontSize: 14),
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            key: const Key('video-prompt'),
+                            controller: _prompt,
+                            enabled: !_locked,
+                            minLines: 4,
+                            maxLines: 9,
+                            decoration: const InputDecoration(
+                              hintText:
+                                  '比如：落日洒进海边咖啡馆，白色纱帘随风轻轻摆动，镜头缓慢推进，温暖的胶片质感。',
+                              hintStyle: TextStyle(height: 1.8, fontSize: 14),
+                            ),
+                            validator: (v) =>
+                                VideoDraft(prompt: v ?? '').validationError,
                           ),
-                          validator: (v) =>
-                              VideoDraft(prompt: v ?? '').validationError,
-                        ),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 4,
-                          children: [
-                            for (final entry in const {
-                              '海边日落': '夕阳下的海岸，浪花轻轻拍打沙滩，镜头缓慢横移，暖色胶片质感，宁静而浪漫。',
-                              '日常切片':
-                                  '午后阳光穿过窗边的绿植，一杯咖啡升起热气，镜头缓慢推进，柔和自然光，生活电影感。',
-                              '城市漫游': '雨后的城市街道，霓虹倒映在水面上，镜头低角度缓慢前行，细腻的电影光影。',
-                            }.entries)
-                              ActionChip(
-                                label: Text(entry.key),
-                                avatar: const Icon(
-                                  Icons.auto_awesome_outlined,
-                                  size: 14,
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              for (final entry in const {
+                                '海边日落': '夕阳下的海岸，浪花轻轻拍打沙滩，镜头缓慢横移，暖色胶片质感，宁静而浪漫。',
+                                '日常切片':
+                                    '午后阳光穿过窗边的绿植，一杯咖啡升起热气，镜头缓慢推进，柔和自然光，生活电影感。',
+                                '城市漫游': '雨后的城市街道，霓虹倒映在水面上，镜头低角度缓慢前行，细腻的电影光影。',
+                              }.entries)
+                                ActionChip(
+                                  label: Text(entry.key),
+                                  avatar: const Icon(
+                                    Icons.auto_awesome_outlined,
+                                    size: 14,
+                                  ),
+                                  onPressed: _locked
+                                      ? null
+                                      : () => setState(
+                                          () => _prompt.text = entry.value,
+                                        ),
                                 ),
-                                onPressed: _locked
-                                    ? null
-                                    : () => setState(
-                                        () => _prompt.text = entry.value,
-                                      ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '描述主体、动作、光线与镜头，让画面更接近你的想象。\n最多 5000 个字符，其中中文最多 2500 字。',
-                          style: TextStyle(
-                            color: p.muted,
-                            fontSize: 11,
-                            height: 1.7,
+                            ],
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  VideoPanel(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const VideoEyebrow('02 / TITLE & COVER'),
-                        const SizedBox(height: 14),
-                        Text(
-                          '给作品一个名字',
-                          style: TextStyle(
-                            color: p.ink,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '选填，让每一段灵感都更容易被找到。',
-                          style: TextStyle(
-                            color: p.muted,
-                            fontSize: 12,
-                            height: 1.7,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          key: const Key('video-title'),
-                          controller: _title,
-                          enabled: !_locked,
-                          maxLines: 2,
-                          minLines: 1,
-                          decoration: const InputDecoration(
-                            labelText: '视频标题（可选）',
-                            hintText: '比如：在海边，等一场日落',
-                            helperText: '最多 200 个字符',
-                          ),
-                          validator: VideoDraft.titleError,
-                        ),
-                        const SizedBox(height: 18),
-                        TextFormField(
-                          key: const Key('video-cover-url'),
-                          controller: _cover,
-                          enabled: !_locked,
-                          keyboardType: TextInputType.url,
-                          autocorrect: false,
-                          maxLines: 3,
-                          minLines: 1,
-                          decoration: const InputDecoration(
-                            labelText: '封面 URL（可选）',
-                            hintText: 'https://…/cover.jpg',
-                            helperText: '使用可公开访问的 HTTP/HTTPS 图片地址',
-                            helperMaxLines: 2,
-                          ),
-                          validator: VideoDraft.coverError,
-                          onChanged: (_) {
-                            if (_previewCover != null) {
-                              setState(() => _previewCover = null);
-                            }
-                          },
-                        ),
-                        const SizedBox(height: 8),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton.icon(
-                            onPressed: _locked
-                                ? null
-                                : () {
-                                    if (_form.currentState!.validate()) {
-                                      FocusScope.of(context).unfocus();
-                                      setState(
-                                        () => _previewCover =
-                                            VideoReference.imageUri(
-                                              _cover.text,
-                                            ),
-                                      );
-                                    }
-                                  },
-                            icon: const Icon(Icons.image_outlined, size: 17),
-                            label: const Text('预览封面'),
-                          ),
-                        ),
-                        if (_previewCover != null)
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(16),
-                            child: VideoCover(uri: _previewCover),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  VideoPanel(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const VideoEyebrow('03 / THE LITTLE DETAILS'),
-                        const SizedBox(height: 18),
-                        _select(
-                          '生成模型',
-                          _model,
-                          VideoDraft.models,
-                          (v) {
-                            _model = v;
-                            if (v == VideoDraft.models.last &&
-                                _resolution == '480P') {
-                              _resolution = '720P';
-                            }
-                          },
-                          display: (v) => v == VideoDraft.models.first
-                              ? 'HappyHorse 1.1'
-                              : 'HappyHorse 1.0',
-                        ),
-                        const SizedBox(height: 16),
-                        _select(
-                          '画面比例',
-                          _ratio,
-                          VideoDraft.ratios,
-                          (v) => _ratio = v,
-                          display: (v) => switch (v) {
-                            '16:9' => '16:9 · 横向电影',
-                            '9:16' => '9:16 · 竖屏故事',
-                            '1:1' => '1:1 · 方形画幅',
-                            _ => v,
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        _select(
-                          '清晰度',
-                          _resolution,
-                          _model == VideoDraft.models.last
-                              ? ['720P', '1080P']
-                              : ['480P', '720P', '1080P'],
-                          (v) => _resolution = v,
-                        ),
-                        const SizedBox(height: 20),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                '影片时长',
-                                style: TextStyle(
-                                  color: p.ink,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '描述主体、动作、光线与镜头，让画面更接近你的想象。\n最多 5000 个字符，其中中文最多 2500 字。',
+                            style: TextStyle(
+                              color: p.muted,
+                              fontSize: 11,
+                              height: 1.7,
                             ),
-                            Text(
-                              '$_duration 秒',
-                              style: const TextStyle(
-                                color: VideoPalette.accent,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Slider(
-                          value: _duration.toDouble(),
-                          min: 3,
-                          max: 15,
-                          divisions: 12,
-                          label: '$_duration 秒',
-                          activeColor: VideoPalette.accent,
-                          onChanged: _locked
-                              ? null
-                              : (v) => setState(() => _duration = v.round()),
-                        ),
-                        const SizedBox(height: 2),
-                        ExpansionTile(
-                          tilePadding: EdgeInsets.zero,
-                          title: const Text(
-                            '更多设置',
-                            style: TextStyle(fontSize: 14),
                           ),
-                          children: [
-                            SwitchListTile(
-                              contentPadding: EdgeInsets.zero,
-                              title: const Text(
-                                '保留水印',
-                                style: TextStyle(fontSize: 14),
-                              ),
-                              value: _watermark,
-                              onChanged: _locked
-                                  ? null
-                                  : (v) => setState(() => _watermark = v),
-                            ),
-                            TextFormField(
-                              controller: _seed,
-                              enabled: !_locked,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: '随机种子（可选）',
-                                hintText: '0–2147483647',
-                              ),
-                              validator: (v) {
-                                if (v == null || v.trim().isEmpty) return null;
-                                final n = int.tryParse(v.trim());
-                                return n == null || n < 0 || n > 2147483647
-                                    ? '请输入 0–2147483647 的整数'
-                                    : null;
-                              },
-                            ),
-                            const SizedBox(height: 12),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  if (_error != null) ...[
-                    VideoNotice(_error!),
-                    const SizedBox(height: 16),
-                  ],
-                  FilledButton.icon(
-                    key: const Key('video-submit'),
-                    onPressed: _submitting ? null : _submit,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: VideoPalette.accent,
-                      padding: const EdgeInsets.symmetric(vertical: 17),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
+                        ],
                       ),
                     ),
-                    icon: _submitting
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.auto_awesome_rounded, size: 19),
-                    label: Text(
-                      _submitting
-                          ? '正在提交，请稍候…'
-                          : _locked
-                          ? '核对并重试原提交'
-                          : '生成我的影片',
+                    const SizedBox(height: 16),
+                    VideoPanel(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const VideoEyebrow('02 / THE COVER'),
+                          const SizedBox(height: 14),
+                          Text(
+                            '给作品一个名字',
+                            style: TextStyle(
+                              color: p.ink,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '选填，让每一段灵感都更容易被找到。',
+                            style: TextStyle(
+                              color: p.muted,
+                              fontSize: 12,
+                              height: 1.7,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            key: const Key('video-title'),
+                            controller: _title,
+                            enabled: !_locked,
+                            maxLines: 2,
+                            minLines: 1,
+                            decoration: const InputDecoration(
+                              labelText: '视频标题（可选）',
+                              hintText: '比如：在海边，等一场日落',
+                              helperText: '最多 200 个字符',
+                            ),
+                            validator: VideoDraft.titleError,
+                          ),
+                          const SizedBox(height: 18),
+                          TextFormField(
+                            key: const Key('video-cover-url'),
+                            controller: _cover,
+                            enabled: !_locked,
+                            keyboardType: TextInputType.url,
+                            autocorrect: false,
+                            maxLines: 3,
+                            minLines: 1,
+                            decoration: const InputDecoration(
+                              labelText: '封面 URL（可选）',
+                              hintText: 'https://…/cover.jpg',
+                              helperText: '使用可公开访问的 HTTP/HTTPS 图片地址',
+                              helperMaxLines: 2,
+                            ),
+                            validator: VideoDraft.coverError,
+                            onChanged: (_) {
+                              if (_previewCover != null) {
+                                setState(() => _previewCover = null);
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton.icon(
+                              onPressed: _locked
+                                  ? null
+                                  : () {
+                                      if (_form.currentState!.validate()) {
+                                        FocusScope.of(context).unfocus();
+                                        setState(
+                                          () => _previewCover =
+                                              VideoReference.imageUri(
+                                                _cover.text,
+                                              ),
+                                        );
+                                      }
+                                    },
+                              icon: const Icon(Icons.image_outlined, size: 17),
+                              label: const Text('预览封面'),
+                            ),
+                          ),
+                          if (_previewCover != null)
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: VideoCover(uri: _previewCover),
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    '提交后会在后台生成，可在「我的作品」查看进展。\n生成使用服务端模型额度，提交后暂不支持撤回。',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: p.muted, fontSize: 11, height: 1.8),
-                  ),
-                ],
+                    const SizedBox(height: 16),
+                    VideoPanel(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const VideoEyebrow('03 / FILM SETTINGS'),
+                          const SizedBox(height: 18),
+                          _select(
+                            '生成模型',
+                            _model,
+                            VideoDraft.models,
+                            (v) {
+                              _model = v;
+                              if (v == VideoDraft.models.last &&
+                                  _resolution == '480P') {
+                                _resolution = '720P';
+                              }
+                            },
+                            display: (v) => v == VideoDraft.models.first
+                                ? 'HappyHorse 1.1'
+                                : 'HappyHorse 1.0',
+                          ),
+                          const SizedBox(height: 16),
+                          _select(
+                            '画面比例',
+                            _ratio,
+                            VideoDraft.ratios,
+                            (v) => _ratio = v,
+                            display: (v) => switch (v) {
+                              '16:9' => '16:9 · 横向电影',
+                              '9:16' => '9:16 · 竖屏故事',
+                              '1:1' => '1:1 · 方形画幅',
+                              _ => v,
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          _select(
+                            '清晰度',
+                            _resolution,
+                            _model == VideoDraft.models.last
+                                ? ['720P', '1080P']
+                                : ['480P', '720P', '1080P'],
+                            (v) => _resolution = v,
+                          ),
+                          const SizedBox(height: 20),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '影片时长',
+                                  style: TextStyle(
+                                    color: p.ink,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                '$_duration 秒',
+                                style: const TextStyle(
+                                  color: VideoPalette.accent,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Slider(
+                            value: _duration.toDouble(),
+                            min: 3,
+                            max: 15,
+                            divisions: 12,
+                            label: '$_duration 秒',
+                            activeColor: VideoPalette.accent,
+                            onChanged: _locked
+                                ? null
+                                : (v) => setState(() => _duration = v.round()),
+                          ),
+                          const SizedBox(height: 2),
+                          ExpansionTile(
+                            tilePadding: EdgeInsets.zero,
+                            title: const Text(
+                              '更多设置',
+                              style: TextStyle(fontSize: 14),
+                            ),
+                            children: [
+                              SwitchListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text(
+                                  '保留水印',
+                                  style: TextStyle(fontSize: 14),
+                                ),
+                                value: _watermark,
+                                onChanged: _locked
+                                    ? null
+                                    : (v) => setState(() => _watermark = v),
+                              ),
+                              TextFormField(
+                                controller: _seed,
+                                enabled: !_locked,
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                  labelText: '随机种子（可选）',
+                                  hintText: '0–2147483647',
+                                ),
+                                validator: (v) {
+                                  if (v == null || v.trim().isEmpty) {
+                                    return null;
+                                  }
+                                  final n = int.tryParse(v.trim());
+                                  return n == null || n < 0 || n > 2147483647
+                                      ? '请输入 0–2147483647 的整数'
+                                      : null;
+                                },
+                              ),
+                              const SizedBox(height: 12),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    if (_error != null) ...[
+                      VideoNotice(_error!),
+                      const SizedBox(height: 16),
+                    ],
+                    FilledButton.icon(
+                      key: const Key('video-submit'),
+                      onPressed: _submitting ? null : _submit,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: p.ink,
+                        foregroundColor: p.background,
+                        padding: const EdgeInsets.symmetric(vertical: 17),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      icon: _submitting
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.auto_awesome_rounded, size: 19),
+                      label: Text(
+                        _submitting
+                            ? '正在提交，请稍候…'
+                            : _locked
+                            ? '核对并重试原提交'
+                            : '生成我的影片',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      '提交后会在后台生成，可在「我的作品」查看进展。\n生成使用服务端模型额度，提交后暂不支持撤回。',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: p.muted,
+                        fontSize: 11,
+                        height: 1.8,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

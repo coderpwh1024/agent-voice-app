@@ -137,7 +137,7 @@ class _ChatRecordDetailPageState extends State<ChatRecordDetailPage> {
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
                 sliver: SliverList.list(
                   children: [
                     RecordHero(
@@ -174,7 +174,7 @@ class _ChatRecordDetailPageState extends State<ChatRecordDetailPage> {
               ),
               if (!_loading && _error == null)
                 SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
                   sliver: SliverList.builder(
                     itemCount: _rows.length,
                     itemBuilder: _buildRow,
@@ -205,7 +205,7 @@ class _ConversationHeader extends StatelessWidget {
             padding: const EdgeInsets.all(11),
             decoration: BoxDecoration(
               color: palette.lavender,
-              borderRadius: BorderRadius.circular(15),
+              borderRadius: BorderRadius.circular(6),
             ),
             child: Icon(
               Icons.chat_bubble_outline_rounded,
@@ -223,7 +223,7 @@ class _ConversationHeader extends StatelessWidget {
                   style: TextStyle(
                     color: palette.ink,
                     fontSize: 16,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w500,
                     height: 1.5,
                   ),
                 ),
@@ -268,7 +268,7 @@ class _MessageBubble extends StatelessWidget {
         child: Material(
           color: palette.surface,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(8),
             side: BorderSide(color: palette.border),
           ),
           clipBehavior: Clip.antiAlias,
@@ -310,8 +310,8 @@ class _MessageBubble extends StatelessWidget {
               color: human ? Colors.transparent : palette.border,
             ),
             borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(20),
-              topRight: const Radius.circular(20),
+              topLeft: const Radius.circular(8),
+              topRight: const Radius.circular(8),
               bottomLeft: Radius.circular(human ? 20 : 5),
               bottomRight: Radius.circular(human ? 5 : 20),
             ),
@@ -324,7 +324,7 @@ class _MessageBubble extends StatelessWidget {
                 style: TextStyle(
                   color: palette.accent,
                   fontSize: 11,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
               const SizedBox(height: 6),

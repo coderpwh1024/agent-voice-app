@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../../core/api/api_models.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/theme/editorial_widgets.dart';
 import '../../core/api/video_reference.dart';
 import '../../core/config/app_config.dart';
 import '../../core/audio/audio_bridge.dart';
@@ -229,7 +231,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
                         child: Text(
                           '让对话更合心意',
                           style: Theme.of(context).textTheme.titleLarge
-                              ?.copyWith(fontWeight: FontWeight.w700),
+                              ?.copyWith(fontWeight: FontWeight.w500),
                         ),
                       ),
                       IconButton(
@@ -556,7 +558,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
     final capabilities = controller.capabilities;
     final connected = controller.isConnected;
     final messages = controller.messages;
-    final dark = Theme.of(context).brightness == Brightness.dark;
+    final palette = AppPalette(context);
     final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
     final availableHeight =
         MediaQuery.sizeOf(context).height -
@@ -566,7 +568,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
         : _statusLabel(controller.state, capabilities);
     final color = _statusColor(controller.state);
     return Scaffold(
-      backgroundColor: dark ? const Color(0xff171412) : const Color(0xfffbf8f4),
+      backgroundColor: palette.background,
       appBar: AppBar(
         toolbarHeight:
             72 + (MediaQuery.textScalerOf(context).scale(16) - 16).clamp(0, 24),
@@ -577,7 +579,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
               '对话偏好，${recordAgentName(_selectedAgent?.id ?? 'chatbot')}，$status',
           excludeSemantics: true,
           child: InkWell(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(8),
             onTap: _showPreferences,
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -589,8 +591,8 @@ class _VoiceHomePageState extends State<VoiceHomePage>
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -847,7 +849,11 @@ class _VoiceHomePageState extends State<VoiceHomePage>
                             child: Text(
                               controller.partialTranscript,
                               style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(color: color),
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface,
+                                  ),
                             ),
                           ),
                         ],
@@ -905,13 +911,13 @@ class _VoiceHomePageState extends State<VoiceHomePage>
 }
 
 Color _statusColor(VoiceConnectionState state) => switch (state) {
-  VoiceConnectionState.disconnected => const Color(0xff90746b),
+  VoiceConnectionState.disconnected => const Color(0xff73786c),
   VoiceConnectionState.wakeListening ||
   VoiceConnectionState.ready ||
   VoiceConnectionState.listening => const Color(0xff4b836c),
   VoiceConnectionState.connecting => const Color(0xffa36d30),
-  VoiceConnectionState.thinking => const Color(0xff8974b3),
-  VoiceConnectionState.speaking => const Color(0xffb75d56),
+  VoiceConnectionState.thinking => const Color(0xff6d755f),
+  VoiceConnectionState.speaking => const Color(0xff52715c),
 };
 
 String _statusLabel(
@@ -941,14 +947,14 @@ class _ScrollShortcut extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-    elevation: 3,
+    elevation: 0,
     shadowColor: Colors.black.withValues(alpha: 0.12),
     color: emphasized
         ? Theme.of(context).colorScheme.primaryContainer
         : Theme.of(context).colorScheme.surface,
-    borderRadius: BorderRadius.circular(24),
+    borderRadius: BorderRadius.circular(10),
     child: InkWell(
-      borderRadius: BorderRadius.circular(24),
+      borderRadius: BorderRadius.circular(10),
       onTap: onPressed,
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 48),
@@ -1009,8 +1015,10 @@ class _VoiceControls extends StatelessWidget {
       style: FilledButton.styleFrom(
         backgroundColor: connected
             ? theme.colorScheme.surfaceContainerHighest
-            : const Color(0xffb85f56),
-        foregroundColor: connected ? theme.colorScheme.onSurface : Colors.white,
+            : AppPalette(context).ink,
+        foregroundColor: connected
+            ? theme.colorScheme.onSurface
+            : AppPalette(context).background,
         minimumSize: const Size(48, 48),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       ),
@@ -1021,9 +1029,7 @@ class _VoiceControls extends StatelessWidget {
       key: const ValueKey('voice-controls'),
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
       decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(color: theme.dividerColor.withValues(alpha: 0.1)),
-        ),
+        border: Border(top: BorderSide(color: AppPalette(context).border)),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -1036,7 +1042,7 @@ class _VoiceControls extends StatelessWidget {
               Text(
                 connected ? status : '语音陪伴',
                 style: theme.textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
               const SizedBox(height: 3),
@@ -1074,39 +1080,38 @@ class _WelcomeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final dark = theme.brightness == Brightness.dark;
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(30),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: dark
-              ? const [Color(0xff3a2824), Color(0xff241e2e)]
-              : const [Color(0xffffe9df), Color(0xfff3e8ff)],
-        ),
-      ),
+    final palette = AppPalette(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 28, 24, 8),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _VoiceOrb(state: state, color: _statusColor(state), dark: dark),
+          Row(
+            children: [
+              const Expanded(
+                child: EditorialEyebrow('XIAOMEI / VOICE JOURNAL'),
+              ),
+              _VoiceOrb(
+                state: state,
+                color: _statusColor(state),
+                dark: palette.dark,
+              ),
+            ],
+          ),
           const SizedBox(height: 20),
-          Text(
-            '嗨，我是小美',
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
+          const EditorialHeading(
+            eyebrow: '',
+            title: '嗨，我是小美',
+            subtitle: '生活的碎片、突然的灵感，都可以说给我听。',
           ),
-          const SizedBox(height: 8),
-          Text(
-            '生活的碎片、突然的灵感，都可以说给我听。',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
+          const SizedBox(height: 18),
+          _StatusPill(
+            label: status,
+            color: _statusColor(state),
+            dark: palette.dark,
           ),
-          const SizedBox(height: 16),
-          _StatusPill(label: status, color: _statusColor(state), dark: dark),
+          const SizedBox(height: 24),
+          Divider(height: 1, color: palette.border),
         ],
       ),
     );
@@ -1140,17 +1145,14 @@ class _ConversationPreferences extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final dark = theme.brightness == Brightness.dark;
     final selectedVoiceOption = capabilities?.voiceOption(selectedVoice);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.fromLTRB(16, 15, 16, 16),
       decoration: BoxDecoration(
-        color: dark ? const Color(0xff25211f) : Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: dark ? const Color(0xff3b3430) : const Color(0xffeee5df),
-        ),
+        color: AppPalette(context).surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppPalette(context).border),
       ),
       child: Column(
         children: [
@@ -1162,7 +1164,7 @@ class _ConversationPreferences extends StatelessWidget {
               Text(
                 '对话偏好',
                 style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
               if (threadId != null)
@@ -1173,12 +1175,12 @@ class _ConversationPreferences extends StatelessWidget {
                   ),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     '继续上次对话',
                     style: theme.textTheme.labelSmall?.copyWith(
-                      color: const Color(0xff8b675e),
+                      color: AppPalette(context).muted,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -1323,11 +1325,9 @@ class _StatusPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
       decoration: BoxDecoration(
-        color: dark
-            ? Colors.white.withValues(alpha: 0.07)
-            : Colors.white.withValues(alpha: 0.66),
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.45)),
+        color: AppPalette(context).blush,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppPalette(context).border),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1342,8 +1342,8 @@ class _StatusPill extends StatelessWidget {
             child: Text(
               label,
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: dark ? const Color(0xfffff8f2) : const Color(0xff60443d),
-                fontWeight: FontWeight.w700,
+                color: AppPalette(context).ink,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ),
@@ -1366,43 +1366,23 @@ class _VoiceOrb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final active = state != VoiceConnectionState.disconnected;
+    final palette = AppPalette(context);
     return Container(
-      width: 90,
-      height: 90,
-      padding: const EdgeInsets.all(8),
+      width: 56,
+      height: 56,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: Colors.white.withValues(alpha: dark ? 0.08 : 0.54),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.56)),
+        color: palette.blush,
+        border: Border.all(color: palette.border),
       ),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: active
-                ? [const Color(0xffef9b89), color]
-                : const [Color(0xffd9c5bd), Color(0xffad958c)],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: color.withValues(alpha: 0.28),
-              blurRadius: 18,
-              spreadRadius: 2,
-            ),
-          ],
-        ),
-        child: Icon(
-          state == VoiceConnectionState.thinking
-              ? Icons.auto_awesome_rounded
-              : state == VoiceConnectionState.speaking
-              ? Icons.graphic_eq_rounded
-              : Icons.mic_rounded,
-          color: Colors.white,
-          size: 34,
-        ),
+      child: Icon(
+        state == VoiceConnectionState.thinking
+            ? Icons.more_horiz_rounded
+            : state == VoiceConnectionState.speaking
+            ? Icons.graphic_eq_rounded
+            : Icons.mic_none_rounded,
+        color: palette.ink,
+        size: 26,
       ),
     );
   }
@@ -1420,15 +1400,13 @@ class _FeatureChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? const Color(0xff332d2a)
-              : const Color(0xfff8f2ee),
-          borderRadius: BorderRadius.circular(14),
+          color: AppPalette(context).blush,
+          borderRadius: BorderRadius.circular(6),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 15, color: const Color(0xffb96f61)),
+            Icon(icon, size: 15, color: AppPalette(context).accentInk),
             const SizedBox(width: 6),
             Flexible(
               child: Text(
@@ -1463,7 +1441,7 @@ class _EmptyConversation extends StatelessWidget {
               configured ? '今天想聊点什么？' : '还差一步，就能认识小美',
               textAlign: TextAlign.center,
               style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w500,
                 color: theme.colorScheme.onSurface,
               ),
             ),
@@ -1510,20 +1488,18 @@ class _PromptChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
+    final palette = AppPalette(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
       decoration: BoxDecoration(
-        color: dark ? const Color(0xff2b2623) : const Color(0xfffff8f3),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: dark ? const Color(0xff403835) : const Color(0xffeee1da),
-        ),
+        color: palette.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: palette.border),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 15, color: const Color(0xffc47869)),
+          Icon(icon, size: 15, color: palette.accentInk),
           const SizedBox(width: 6),
           Text(label, style: Theme.of(context).textTheme.labelMedium),
         ],
@@ -1547,7 +1523,7 @@ class _MessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final human = entry.role == 'human';
     final theme = Theme.of(context);
-    final dark = theme.brightness == Brightness.dark;
+    final palette = AppPalette(context);
     return LayoutBuilder(
       builder: (context, constraints) => Align(
         alignment: human ? Alignment.centerRight : Alignment.centerLeft,
@@ -1558,32 +1534,15 @@ class _MessageBubble extends StatelessWidget {
           margin: EdgeInsets.only(top: human ? 8 : 0, bottom: 14),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
           decoration: BoxDecoration(
-            color: human
-                ? null
-                : dark
-                ? const Color(0xff292422)
-                : Colors.white,
-            gradient: human
-                ? LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: dark
-                        ? const [Color(0xff67454b), Color(0xff503b50)]
-                        : const [Color(0xfff9e1da), Color(0xfff0def0)],
-                  )
-                : null,
-            border: human
-                ? null
-                : Border.all(
-                    color: dark
-                        ? const Color(0xff3b3330)
-                        : const Color(0xffeee5df),
-                  ),
+            color: human ? palette.blush : palette.surface,
+            border: Border.all(
+              color: human ? Colors.transparent : palette.border,
+            ),
             borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(22),
-              topRight: const Radius.circular(22),
-              bottomLeft: Radius.circular(human ? 22 : 6),
-              bottomRight: Radius.circular(human ? 6 : 22),
+              topLeft: const Radius.circular(10),
+              topRight: const Radius.circular(10),
+              bottomLeft: Radius.circular(human ? 10 : 3),
+              bottomRight: Radius.circular(human ? 3 : 10),
             ),
           ),
           child: Column(
@@ -1596,9 +1555,7 @@ class _MessageBubble extends StatelessWidget {
                     : entry.text,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   height: 1.6,
-                  color: dark
-                      ? const Color(0xfffaf1ed)
-                      : const Color(0xff493a35),
+                  color: palette.ink,
                 ),
               ),
               if (!human && entry.memoryStatus != null)
@@ -1691,22 +1648,9 @@ class _Composer extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(7),
           decoration: BoxDecoration(
-            color: Theme.of(context).brightness == Brightness.dark
-                ? const Color(0xff292421)
-                : Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? const Color(0xff413936)
-                  : const Color(0xffeadfd9),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.06),
-                blurRadius: 18,
-                offset: const Offset(0, 8),
-              ),
-            ],
+            color: AppPalette(context).surface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppPalette(context).border),
           ),
           child: Row(
             children: [
@@ -1744,7 +1688,8 @@ class _Composer extends StatelessWidget {
                   tooltip: '立即停止回答',
                   onPressed: onStop,
                   style: IconButton.styleFrom(
-                    backgroundColor: const Color(0xffd65f58),
+                    backgroundColor: Theme.of(context).colorScheme.error,
+                    foregroundColor: Theme.of(context).colorScheme.onError,
                   ),
                   icon: const Icon(Icons.stop_rounded),
                 )
@@ -1753,7 +1698,8 @@ class _Composer extends StatelessWidget {
                   tooltip: '发送文字',
                   onPressed: enabled ? onSend : null,
                   style: IconButton.styleFrom(
-                    backgroundColor: const Color(0xffd87568),
+                    backgroundColor: AppPalette(context).ink,
+                    foregroundColor: AppPalette(context).background,
                   ),
                   icon: const Icon(Icons.arrow_upward_rounded),
                 ),

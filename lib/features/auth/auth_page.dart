@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_models.dart';
 import '../../core/config/app_config.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/theme/editorial_widgets.dart';
 
 enum AuthMode { login, register }
 
@@ -216,67 +218,43 @@ class _AuthPageState extends State<AuthPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final palette = AppPalette(context);
     return Scaffold(
-      body: Stack(
-        children: [
-          const Positioned.fill(child: _AuthBackdrop()),
-          SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) => SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(22, 24, 22, 32),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: constraints.maxHeight - 56,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const _BrandHeader(),
-                      const SizedBox(height: 34),
-                      Container(
-                        constraints: const BoxConstraints(maxWidth: 480),
-                        padding: const EdgeInsets.fromLTRB(22, 20, 22, 24),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.surface.withValues(
-                            alpha: 0.94,
-                          ),
-                          borderRadius: BorderRadius.circular(28),
-                          border: Border.all(
-                            color: theme.colorScheme.outlineVariant.withValues(
-                              alpha: 0.55,
-                            ),
-                          ),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x1A1B2952),
-                              blurRadius: 32,
-                              offset: Offset(0, 16),
-                            ),
-                          ],
+      backgroundColor: palette.background,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 32, 24, 32),
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const _BrandHeader(),
+                  const SizedBox(height: 32),
+                  EditorialPanel(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _ModeSelector(mode: _mode, onChanged: _setMode),
+                        const SizedBox(height: 24),
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 260),
+                          child: _codeSent
+                              ? _buildCodeForm(theme)
+                              : _buildEmailForm(theme),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _ModeSelector(mode: _mode, onChanged: _setMode),
-                            const SizedBox(height: 24),
-                            AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 260),
-                              child: _codeSent
-                                  ? _buildCodeForm(theme)
-                                  : _buildEmailForm(theme),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 22),
-                      const _SecurityHint(),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 24),
+                  const _SecurityHint(),
+                ],
               ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -290,8 +268,8 @@ class _AuthPageState extends State<AuthPage> {
         Text(
           registering ? '创建你的账号' : '欢迎回来',
           style: theme.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.6,
+            fontWeight: FontWeight.w500,
+            letterSpacing: .2,
           ),
         ),
         const SizedBox(height: 7),
@@ -399,11 +377,13 @@ class _AuthPageState extends State<AuthPage> {
               icon: const Icon(Icons.arrow_back_rounded),
             ),
             const SizedBox(width: 4),
-            Text(
-              '查收验证码',
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.6,
+            Expanded(
+              child: Text(
+                '查收验证码',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: .2,
+                ),
               ),
             ),
           ],
@@ -436,7 +416,7 @@ class _AuthPageState extends State<AuthPage> {
           ],
           textAlign: TextAlign.center,
           style: theme.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w500,
             letterSpacing: 8,
           ),
           onChanged: (value) {
@@ -505,99 +485,35 @@ class _BrandHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final palette = AppPalette(context);
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 76,
-          height: 76,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF6157F5), Color(0xFF29B6D1)],
-            ),
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x406157F5),
-                blurRadius: 24,
-                offset: Offset(0, 10),
+        Row(
+          children: [
+            Icon(Icons.graphic_eq_rounded, size: 22, color: palette.ink),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Agent Voice',
+                style: TextStyle(
+                  color: palette.ink,
+                  fontSize: 14,
+                  letterSpacing: 1,
+                ),
               ),
-            ],
-          ),
-          child: const Icon(
-            Icons.graphic_eq_rounded,
-            size: 40,
-            color: Colors.white,
-          ),
+            ),
+          ],
         ),
-        const SizedBox(height: 18),
-        Text(
-          'Agent Voice',
-          style: theme.textTheme.headlineMedium?.copyWith(
-            fontWeight: FontWeight.w800,
-            letterSpacing: -1,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          '与你的 AI 助手，自然地聊一聊',
-          style: theme.textTheme.bodyLarge?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
+        const SizedBox(height: 32),
+        const EditorialHeading(
+          eyebrow: 'XIAOMEI / VOICE JOURNAL',
+          title: '让每一句话，都有回应。',
+          subtitle: '与你的 AI 助手，自然地聊一聊',
         ),
       ],
     );
   }
-}
-
-class _AuthBackdrop extends StatelessWidget {
-  const _AuthBackdrop();
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Theme.of(context).colorScheme.primaryContainer
-                .withValues(alpha: 0.7),
-            Theme.of(context).colorScheme.surface,
-            Theme.of(context).colorScheme.secondaryContainer
-                .withValues(alpha: 0.35),
-          ],
-          stops: const [0, 0.48, 1],
-        ),
-      ),
-      child: CustomPaint(painter: _GlowPainter()),
-    );
-  }
-}
-
-class _GlowPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..shader =
-          const RadialGradient(colors: [Color(0x3329B6D1), Color(0x0029B6D1)])
-              .createShader(
-                Rect.fromCircle(
-                  center: Offset(size.width * 0.88, size.height * 0.18),
-                  radius: size.width * 0.55,
-                ),
-              );
-    canvas.drawCircle(
-      Offset(size.width * 0.88, size.height * 0.18),
-      size.width * 0.55,
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _SecurityHint extends StatelessWidget {
@@ -614,10 +530,13 @@ class _SecurityHint extends StatelessWidget {
           color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
         const SizedBox(width: 6),
-        Text(
-          '免密码登录 · 凭据加密保存在本机',
-          style: Theme.of(context).textTheme.bodySmall
-              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+        Flexible(
+          child: Text(
+            '免密码登录 · 凭据加密保存在本机',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
         ),
       ],
     );

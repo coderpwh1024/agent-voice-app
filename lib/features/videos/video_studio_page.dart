@@ -22,6 +22,7 @@ class _VideoStudioPageState extends State<VideoStudioPage> {
   bool _loading = false, _loadingMore = false, _hasLoaded = false;
   String? _error;
   bool _failedMore = false;
+  bool _grid = true;
   static const _filters = ['全部', '已完成', '生成中', '排队中', '生成失败'];
   static const _statuses = <String?>[
     null,
@@ -166,301 +167,326 @@ class _VideoStudioPageState extends State<VideoStudioPage> {
   @override
   Widget build(BuildContext context) {
     final p = VideoPalette(context);
-    return Scaffold(
-      backgroundColor: p.background,
-      appBar: AppBar(
-        title: const Text(
-          '视频工作室',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
+    return VideoTheme(
+      child: Scaffold(
         backgroundColor: p.background,
-        surfaceTintColor: Colors.transparent,
-        actions: [
-          IconButton(
-            tooltip: '按编号查询',
-            onPressed: _lookup,
-            icon: const Icon(Icons.manage_search_rounded),
-          ),
-          IconButton(
-            tooltip: '刷新作品',
-            onPressed: _loading ? null : _load,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: SafeArea(
-        top: false,
-        child: VideoLayout(
-          child: RefreshIndicator(
-            onRefresh: _load,
-            child: CustomScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              slivers: [
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(22, 12, 22, 0),
-                  sliver: SliverList.list(
-                    children: [
-                      Row(
-                        children: [
-                          const Expanded(
-                            child: VideoEyebrow('XIAOMEI / MOTION STUDIO'),
-                          ),
-                          Container(
-                            width: 7,
-                            height: 7,
-                            decoration: const BoxDecoration(
-                              color: VideoPalette.accent,
-                              shape: BoxShape.circle,
+        appBar: AppBar(
+          toolbarHeight: 68,
+          title: const VideoWordmark(),
+          actions: [
+            IconButton(
+              tooltip: '按编号查询',
+              onPressed: _lookup,
+              icon: const Icon(Icons.search_rounded, size: 23),
+            ),
+            IconButton(
+              tooltip: '新建影片',
+              onPressed: _create,
+              icon: const Icon(Icons.add_rounded, size: 25),
+            ),
+            const SizedBox(width: 12),
+          ],
+        ),
+        body: SafeArea(
+          top: false,
+          child: VideoLayout(
+            child: RefreshIndicator(
+              onRefresh: _load,
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+                    sliver: SliverList.list(
+                      children: [
+                        const VideoPageHeading(
+                          eyebrow: 'XIAOMEI  /  MOTION JOURNAL',
+                          title: '让灵感，慢慢成片。',
+                          subtitle: '写下一个画面，收藏一段属于你的日常。',
+                        ),
+                        const SizedBox(height: 22),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: FilledButton(
+                            onPressed: _create,
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text('开始创作'),
+                                SizedBox(width: 24),
+                                Icon(Icons.arrow_forward_rounded, size: 18),
+                              ],
                             ),
                           ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '文字成片',
-                            style: TextStyle(color: p.muted, fontSize: 10),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        '把灵感，拍成日常。',
-                        style: TextStyle(
-                          color: p.ink,
-                          fontSize: 29,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -1.2,
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '那些想象中的片刻，现在可以被看见。',
-                        style: TextStyle(
-                          color: p.muted,
-                          fontSize: 13,
-                          height: 1.7,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      VideoLandscape(
-                        height: 250,
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
+                        const SizedBox(height: 32),
+                        Divider(height: 1, color: p.border),
+                        const SizedBox(height: 24),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Expanded(
-                                    child: VideoEyebrow(
-                                      'MAKE SOMETHING BEAUTIFUL',
-                                      color: Colors.white70,
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      border: Border.all(color: Colors.white38),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: const Icon(
-                                      Icons.movie_filter_outlined,
-                                      color: Colors.white,
-                                      size: 20,
-                                    ),
+                                  const VideoEyebrow('THE COLLECTION'),
+                                  const SizedBox(height: 7),
+                                  Wrap(
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    spacing: 10,
+                                    children: [
+                                      Text(
+                                        '我的作品',
+                                        style: TextStyle(
+                                          color: p.ink,
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.w500,
+                                          letterSpacing: 1,
+                                        ),
+                                      ),
+                                      if (_hasLoaded && !_loading)
+                                        Text(
+                                          '$_total 部',
+                                          style: TextStyle(
+                                            color: p.muted,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                    ],
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 26),
-                              const Text(
-                                '从一句话，\n到一段小电影。',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 28,
-                                  height: 1.25,
-                                  letterSpacing: -.8,
-                                  fontWeight: FontWeight.w700,
-                                ),
+                            ),
+                            IconButton(
+                              tooltip: '网格视图',
+                              onPressed: () => setState(() => _grid = true),
+                              isSelected: _grid,
+                              color: _grid
+                                  ? p.ink
+                                  : p.muted.withValues(alpha: .6),
+                              icon: const Icon(
+                                Icons.grid_view_outlined,
+                                size: 20,
                               ),
-                              const SizedBox(height: 16),
-                              FilledButton.icon(
-                                onPressed: _create,
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: const Color(0xfffff8f2),
-                                  foregroundColor: const Color(0xff493448),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 19,
-                                    vertical: 12,
+                              selectedIcon: const Icon(
+                                Icons.grid_view_rounded,
+                                size: 20,
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: '列表视图',
+                              onPressed: () => setState(() => _grid = false),
+                              isSelected: !_grid,
+                              color: !_grid
+                                  ? p.ink
+                                  : p.muted.withValues(alpha: .6),
+                              icon: const Icon(
+                                Icons.view_agenda_outlined,
+                                size: 20,
+                              ),
+                              selectedIcon: const Icon(
+                                Icons.view_agenda_rounded,
+                                size: 20,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              for (var i = 0; i < _filters.length; i++)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 22),
+                                  child: InkWell(
+                                    onTap: () {
+                                      if (_filter == i) return;
+                                      setState(() {
+                                        _filter = i;
+                                        _items = [];
+                                        _hasLoaded = false;
+                                      });
+                                      _load();
+                                    },
+                                    child: Semantics(
+                                      selected: _filter == i,
+                                      button: true,
+                                      child: Container(
+                                        constraints: const BoxConstraints(
+                                          minHeight: 48,
+                                        ),
+                                        alignment: Alignment.center,
+                                        decoration: BoxDecoration(
+                                          border: Border(
+                                            bottom: BorderSide(
+                                              color: _filter == i
+                                                  ? p.ink
+                                                  : Colors.transparent,
+                                              width: 1.5,
+                                            ),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          _filters[i],
+                                          style: TextStyle(
+                                            color: _filter == i
+                                                ? p.ink
+                                                : p.muted,
+                                            fontSize: 13,
+                                            fontWeight: _filter == i
+                                                ? FontWeight.w600
+                                                : FontWeight.w400,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 ),
-                                icon: const Icon(Icons.add_rounded, size: 19),
-                                label: const Text('开始创作'),
-                              ),
                             ],
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '原创灵感插画 · 非生成效果预览',
-                        textAlign: TextAlign.right,
-                        style: TextStyle(color: p.muted, fontSize: 9),
-                      ),
-                      const SizedBox(height: 28),
-                      Row(
-                        children: [
-                          Expanded(
+                        const SizedBox(height: 20),
+                        if (_loading)
+                          const Padding(
+                            padding: EdgeInsets.all(24),
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                strokeWidth: 1.5,
+                              ),
+                            ),
+                          ),
+                        if (_error != null && !_failedMore) ...[
+                          VideoNotice(
+                            _error!,
+                            onRetry: () => _load(more: _failedMore),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                        if (!_loading && _error == null && _items.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 36),
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const VideoEyebrow('YOUR FILM COLLECTION'),
-                                const SizedBox(height: 7),
+                                Icon(
+                                  Icons.movie_creation_outlined,
+                                  color: p.muted,
+                                  size: 34,
+                                ),
+                                const SizedBox(height: 18),
                                 Text(
-                                  '我的作品',
+                                  _filter == 0 ? '故事，留一页给你。' : '这里还没有影片',
                                   style: TextStyle(
+                                    fontFamily: 'StudioSerif',
                                     color: p.ink,
                                     fontSize: 22,
-                                    fontWeight: FontWeight.w800,
                                   ),
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  _filter == 0
+                                      ? '从第一段灵感，开始你的映像集。'
+                                      : '换个筛选，看看其他作品。',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: p.muted,
+                                    fontSize: 12,
+                                    height: 1.8,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                TextButton.icon(
+                                  onPressed: _create,
+                                  icon: const Icon(Icons.add_rounded, size: 18),
+                                  label: const Text('创作一部影片'),
                                 ),
                               ],
                             ),
                           ),
-                          if (_hasLoaded && !_loading)
-                            Text(
-                              '$_total 部',
-                              style: TextStyle(color: p.muted, fontSize: 12),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 15),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            for (var i = 0; i < _filters.length; i++)
-                              Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: ChoiceChip(
-                                  label: Text(_filters[i]),
-                                  selected: _filter == i,
-                                  selectedColor: p.blush,
-                                  showCheckmark: false,
-                                  onSelected: (_) {
-                                    if (_filter == i) return;
-                                    setState(() {
-                                      _filter = i;
-                                      _items = [];
-                                      _hasLoaded = false;
-                                    });
-                                    _load();
-                                  },
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      if (_loading)
-                        const Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Center(child: CircularProgressIndicator()),
-                        ),
-                      if (_error != null) ...[
-                        VideoNotice(
-                          _error!,
-                          onRetry: () => _load(more: _failedMore),
-                        ),
-                        const SizedBox(height: 16),
                       ],
-                      if (!_loading && _error == null && _items.isEmpty)
-                        VideoPanel(
-                          child: Column(
+                    ),
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    sliver: SliverLayoutBuilder(
+                      builder: (context, constraints) {
+                        final columns =
+                            _grid &&
+                                constraints.crossAxisExtent >= 330 &&
+                                MediaQuery.textScalerOf(context).scale(14) < 20
+                            ? 2
+                            : 1;
+                        final rows = (_items.length / columns).ceil();
+                        return SliverList.separated(
+                          itemCount: rows,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: 24),
+                          itemBuilder: (_, row) => Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Container(
-                                padding: const EdgeInsets.all(18),
-                                decoration: BoxDecoration(
-                                  color: p.blush,
-                                  shape: BoxShape.circle,
+                              for (var col = 0; col < columns; col++) ...[
+                                if (col > 0) const SizedBox(width: 14),
+                                Expanded(
+                                  child: row * columns + col < _items.length
+                                      ? _FilmCard(
+                                          task: _items[row * columns + col],
+                                          compact: columns > 1,
+                                          onTap: () => _detail(
+                                            _items[row * columns + col],
+                                          ),
+                                        )
+                                      : const SizedBox.shrink(),
                                 ),
-                                child: const Icon(
-                                  Icons.movie_creation_outlined,
-                                  color: VideoPalette.accent,
-                                  size: 30,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                _filter == 0 ? '第一部作品，留给你的灵感。' : '这里还没有影片',
-                                style: TextStyle(
-                                  color: p.ink,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                _filter == 0
-                                    ? '写下一个画面，让故事从这里开始。'
-                                    : '换个筛选，或开始一段新的创作。',
-                                style: TextStyle(color: p.muted, fontSize: 12),
-                              ),
-                              const SizedBox(height: 12),
-                              TextButton.icon(
-                                onPressed: _create,
-                                icon: const Icon(Icons.add_rounded),
-                                label: const Text('创作一部影片'),
-                              ),
+                              ],
                             ],
                           ),
-                        ),
-                    ],
-                  ),
-                ),
-                SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 22),
-                  sliver: SliverList.separated(
-                    itemCount: _items.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 14),
-                    itemBuilder: (_, index) => _FilmCard(
-                      task: _items[index],
-                      onTap: () => _detail(_items[index]),
+                        );
+                      },
                     ),
                   ),
-                ),
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(22, 18, 22, 36),
-                  sliver: SliverToBoxAdapter(
-                    child: Column(
-                      children: [
-                        if (_page < _totalPages && !_loading)
-                          OutlinedButton.icon(
-                            onPressed: _loadingMore
-                                ? null
-                                : () => _load(more: true),
-                            icon: _loadingMore
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(24, 28, 24, 36),
+                    sliver: SliverToBoxAdapter(
+                      child: Column(
+                        children: [
+                          if (_error != null && _failedMore) ...[
+                            VideoNotice(
+                              _error!,
+                              onRetry: () => _load(more: true),
+                            ),
+                            const SizedBox(height: 16),
+                          ],
+                          if (_page < _totalPages && !_loading)
+                            OutlinedButton.icon(
+                              onPressed: _loadingMore
+                                  ? null
+                                  : () => _load(more: true),
+                              icon: _loadingMore
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 1.5,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.expand_more_rounded,
+                                      size: 18,
                                     ),
-                                  )
-                                : const Icon(Icons.expand_more_rounded),
-                            label: Text(_loadingMore ? '正在加载…' : '加载更多作品'),
+                              label: Text(_loadingMore ? '正在加载…' : '加载更多作品'),
+                            ),
+                          const SizedBox(height: 28),
+                          Divider(height: 1, color: p.border),
+                          const SizedBox(height: 20),
+                          const VideoEyebrow(
+                            'LITTLE MOMENTS, TIMELESS STORIES.',
                           ),
-                        const SizedBox(height: 14),
-                        Text(
-                          'MADE OF LITTLE MOMENTS',
-                          style: TextStyle(
-                            color: p.muted,
-                            fontSize: 9,
-                            letterSpacing: 2.5,
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -470,113 +496,102 @@ class _VideoStudioPageState extends State<VideoStudioPage> {
 }
 
 class _FilmCard extends StatelessWidget {
-  const _FilmCard({required this.task, required this.onTap});
+  const _FilmCard({
+    required this.task,
+    required this.onTap,
+    required this.compact,
+  });
   final VideoTask task;
   final VoidCallback onTap;
+  final bool compact;
   @override
   Widget build(BuildContext context) {
     final p = VideoPalette(context);
-    return Material(
-      color: p.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(22),
-        side: BorderSide(color: p.border),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            VideoCover(
-              uri: task.coverUri,
-              child: Stack(
-                children: [
-                  const Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Color(0x18000000),
-                            Color(0x00000000),
-                            Color(0x66000000),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  Positioned(top: 12, left: 12, child: VideoStatusBadge(task)),
-                  if (task.playableUri != null)
-                    const Positioned(
-                      bottom: 12,
-                      left: 14,
-                      child: Icon(
-                        Icons.play_circle_filled_rounded,
-                        color: Colors.white,
-                        size: 32,
-                      ),
-                    ),
-                  Positioned(
-                    bottom: 12,
-                    right: 14,
-                    child: Text(
-                      'NO. ${task.id.toString().padLeft(4, '0')}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          task.displayTitle,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: p.ink,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            height: 1.4,
+    return Semantics(
+      button: true,
+      label: '${task.displayTitle}，${task.label}，查看影片',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: VideoCover(
+                  uri: task.coverUri,
+                  aspectRatio: compact ? 4 / 5 : 16 / 9,
+                  child: Stack(
+                    children: [
+                      const Positioned.fill(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.transparent,
+                                Colors.transparent,
+                                Color(0x5c000000),
+                              ],
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 7),
-                        Text(
-                          videoDate(task.createdAt),
-                          style: TextStyle(color: p.muted, fontSize: 11),
+                      ),
+                      Positioned(
+                        bottom: 12,
+                        left: 12,
+                        child: Text(
+                          'NO. ${task.id.toString().padLeft(3, '0')}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            letterSpacing: 1.5,
+                          ),
                         ),
-                      ],
-                    ),
+                      ),
+                      if (task.playableUri != null)
+                        const Positioned(
+                          top: 10,
+                          right: 10,
+                          child: Icon(
+                            Icons.play_circle_outline_rounded,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                        ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: p.blush,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.arrow_outward_rounded,
-                      color: VideoPalette.accent,
-                      size: 18,
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              SizedBox(
+                height: compact
+                    ? MediaQuery.textScalerOf(context).scale(13) * 3.2
+                    : null,
+                child: Text(
+                  task.displayTitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: p.ink,
+                    fontSize: compact ? 13 : 17,
+                    height: 1.6,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                videoDate(task.createdAt),
+                style: TextStyle(color: p.muted, fontSize: 10, height: 1.5),
+              ),
+              const SizedBox(height: 8),
+              VideoStatusBadge(task),
+            ],
+          ),
         ),
       ),
     );

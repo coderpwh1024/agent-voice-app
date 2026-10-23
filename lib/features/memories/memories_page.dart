@@ -133,7 +133,7 @@ class _MemoriesPageState extends State<MemoriesPage> {
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
                   sliver: SliverList.list(
                     children: [
                       RecordHero(
@@ -180,7 +180,7 @@ class _MemoriesPageState extends State<MemoriesPage> {
                 ),
                 if (!_feed.loading)
                   SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
                     sliver: SliverList.builder(
                       itemCount: _feed.items.length,
                       itemBuilder: (context, index) {
@@ -191,7 +191,7 @@ class _MemoriesPageState extends State<MemoriesPage> {
                             color: palette.surface,
                             clipBehavior: Clip.antiAlias,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(22),
+                              borderRadius: BorderRadius.circular(10),
                               side: BorderSide(color: palette.border),
                             ),
                             child: InkWell(
@@ -256,7 +256,7 @@ class _MemoriesPageState extends State<MemoriesPage> {
                     ),
                   ),
                 SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
                   sliver: SliverToBoxAdapter(
                     child:
                         !_feed.loading &&

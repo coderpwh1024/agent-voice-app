@@ -63,6 +63,12 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  fonts:
+    - family: StudioSerif
+      fonts:
+        - asset: assets/fonts/StudioSerif-Regular.ttf
+          weight: 400
+
   assets:
     - assets/models/sherpa_kws/
 

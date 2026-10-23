@@ -70,7 +70,7 @@ class _MemoryHistoryPageState extends State<MemoryHistoryPage> {
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
                 sliver: SliverList.list(
                   children: [
                     const RecordHero(
@@ -101,7 +101,7 @@ class _MemoryHistoryPageState extends State<MemoryHistoryPage> {
               ),
               if (!_feed.loading)
                 SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
                   sliver: SliverList.builder(
                     itemCount: _feed.items.length,
                     itemBuilder: (_, index) =>
@@ -109,7 +109,7 @@ class _MemoryHistoryPageState extends State<MemoryHistoryPage> {
                   ),
                 ),
               SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.symmetric(horizontal: 24),
                 sliver: SliverToBoxAdapter(
                   child:
                       !_feed.loading &&
@@ -150,7 +150,7 @@ class _HistoryCard extends StatelessWidget {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: palette.surface,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: palette.border),
       ),
       child: Column(
@@ -165,7 +165,7 @@ class _HistoryCard extends StatelessWidget {
                   color: entry.event == 'DELETE'
                       ? palette.blush
                       : palette.lavender,
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(6),
                 ),
                 child: Icon(icon, size: 18, color: palette.accent),
               ),
@@ -178,7 +178,7 @@ class _HistoryCard extends StatelessWidget {
                       label,
                       style: TextStyle(
                         color: palette.ink,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w500,
                         fontSize: 15,
                       ),
                     ),
