@@ -1551,7 +1551,9 @@ class _MessageBubble extends StatelessWidget {
             children: [
               SelectableText(
                 entry.text.isEmpty
-                    ? (entry.video == null ? '…' : '这是为你找到的视频。')
+                    ? (entry.video == null && entry.videoResults == null
+                          ? '…'
+                          : '这是为你找到的视频。')
                     : entry.text,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   height: 1.6,
@@ -1560,7 +1562,13 @@ class _MessageBubble extends StatelessWidget {
               ),
               if (!human && entry.memoryStatus != null)
                 MemoryStatusNote(status: entry.memoryStatus!),
-              if (!human && entry.video != null)
+              if (!human && entry.videoResults != null)
+                VideoResultList(
+                  results: entry.videoResults!,
+                  config: config,
+                  onOpen: onOpenVideo,
+                )
+              else if (!human && entry.video != null)
                 VideoMessageCard(
                   video: entry.video!,
                   config: config,

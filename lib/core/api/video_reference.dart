@@ -1,3 +1,45 @@
+class VideoResultPage {
+  const VideoResultPage({
+    required this.items,
+    required this.total,
+    required this.page,
+    required this.totalPages,
+  });
+
+  final List<VideoReference> items;
+  final int total, page, totalPages;
+
+  static VideoResultPage? tryParse(Object? value) {
+    if (value is! Map || value['type'] != 'video.list') return null;
+    final items = value['items'];
+    final total = value['total'];
+    final page = value['page'];
+    final totalPages = value['total_pages'];
+    if (items is! List ||
+        items.length > 100 ||
+        total is! int ||
+        total < items.length ||
+        page is! int ||
+        page < 1 ||
+        totalPages is! int ||
+        totalPages < 0) {
+      return null;
+    }
+    final videos = <VideoReference>[];
+    for (final item in items) {
+      final video = VideoReference.tryParse(item);
+      if (video == null) return null;
+      videos.add(video);
+    }
+    return VideoResultPage(
+      items: List.unmodifiable(videos),
+      total: total,
+      page: page,
+      totalPages: totalPages,
+    );
+  }
+}
+
 class VideoReference {
   const VideoReference({
     required this.recordId,

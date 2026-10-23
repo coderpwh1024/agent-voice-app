@@ -28,6 +28,44 @@ Future<void> openConversationVideo(
   await Future.wait(releases);
 }
 
+class VideoResultList extends StatelessWidget {
+  const VideoResultList({
+    super.key,
+    required this.results,
+    required this.config,
+    this.onOpen,
+  });
+
+  final VideoResultPage results;
+  final AppConfig config;
+  final Future<void> Function(VideoReference video, bool play)? onOpen;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      const SizedBox(height: 12),
+      Text('共找到 ${results.total} 个视频，本页 ${results.items.length} 个'),
+      for (final (index, video) in results.items.indexed) ...[
+        const SizedBox(height: 12),
+        Text('第 ${index + 1} 个'),
+        VideoMessageCard(
+          video: video,
+          config: config,
+          onOpen: onOpen == null ? null : (play) => onOpen!(video, play),
+        ),
+      ],
+      if (results.items.isEmpty) const Text('没有找到这一页的视频，可以换个标题或内容关键词再说一次。'),
+      if (results.page < results.totalPages)
+        const Padding(
+          padding: EdgeInsets.only(top: 12),
+          child: Text('还有更多结果，可以说“下一页”；查看某条可以说“查询第二个”。'),
+        ),
+    ],
+  );
+}
+
 class VideoMessageCard extends StatelessWidget {
   const VideoMessageCard({
     super.key,

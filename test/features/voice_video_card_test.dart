@@ -12,7 +12,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
 
-import '../core/video_reference_test.dart' show videoSummary;
+import '../core/video_reference_test.dart' show videoListSummary, videoSummary;
 import '../support/fake_video_platform.dart';
 import 'chat_records_page_test.dart' as records;
 import 'voice_home_page_test.dart' show ChatPreviewController, mountChat;
@@ -96,6 +96,50 @@ void main() {
           (_) async => null,
         );
   });
+  testWidgets(
+    'voice search shows ordered playable cards and the real result count',
+    (tester) async {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      final operations = <String>[];
+      final original = VideoPlayerPlatform.instance;
+      final platform = FakeVideoPlatform(operations);
+      VideoPlayerPlatform.instance = platform;
+      addTearDown(() => VideoPlayerPlatform.instance = original);
+      final controller = MediaChatController(operations);
+      controller.entries
+        ..clear()
+        ..add(
+          ConversationEntry(
+            role: 'ai',
+            text: '找到了海边的视频。',
+            videoResults: VideoResultPage.tryParse(videoListSummary()),
+          ),
+        );
+      await mountChat(tester, controller);
+      expect(find.byType(VideoMessageCard), findsNWidgets(2));
+      expect(find.text('共找到 8 个视频，本页 2 个'), findsOneWidget);
+      expect(find.text('第 2 个'), findsOneWidget);
+      expect(find.text('海边海鸥'), findsOneWidget);
+      expect(platform.sources, isEmpty);
+      final play = find.text('播放视频').last;
+      await tester.ensureVisible(play);
+      await tester.tap(play);
+      await tester.pumpAndSettle();
+      expect(platform.sources.single, 'https://cdn.example/second.mp4');
+      expect(
+        operations.indexOf('voice-stopped'),
+        lessThan(operations.indexOf('video-play')),
+      );
+      await tester.tap(find.byTooltip('返回对话'));
+      await tester.pumpAndSettle();
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pumpAndSettle();
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pumpAndSettle();
+      expect(controller.isConnected, isTrue);
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets(
     'video waits for voice to stop and releases native player before resuming the same thread',
     (tester) async {

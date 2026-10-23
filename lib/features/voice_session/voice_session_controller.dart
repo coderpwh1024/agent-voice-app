@@ -31,6 +31,7 @@ class ConversationEntry {
     this.responseId,
     this.memoryStatus,
     this.video,
+    this.videoResults,
   });
 
   final String role;
@@ -38,15 +39,20 @@ class ConversationEntry {
   final String? responseId;
   final MemoryStatus? memoryStatus;
   final VideoReference? video;
+  final VideoResultPage? videoResults;
 
-  ConversationEntry copyWith({String? text, VideoReference? video}) =>
-      ConversationEntry(
-        role: role,
-        text: text ?? this.text,
-        responseId: responseId,
-        memoryStatus: memoryStatus,
-        video: video ?? this.video,
-      );
+  ConversationEntry copyWith({
+    String? text,
+    VideoReference? video,
+    VideoResultPage? videoResults,
+  }) => ConversationEntry(
+    role: role,
+    text: text ?? this.text,
+    responseId: responseId,
+    memoryStatus: memoryStatus,
+    video: video ?? this.video,
+    videoResults: videoResults ?? this.videoResults,
+  );
 }
 
 class ApprovalPrompt {
@@ -511,6 +517,7 @@ class VoiceSessionController extends ChangeNotifier {
             text: item.content,
             memoryStatus: item.memoryStatus,
             video: item.video,
+            videoResults: item.videoResults,
           ),
         ),
       );
@@ -601,16 +608,20 @@ class VoiceSessionController extends ChangeNotifier {
         );
       case 'agent.custom':
         final data = event['data'];
-        if (responseId == null ||
-            data is! Map ||
-            data['type'] != 'video.task') {
+        if (responseId == null || data is! Map) {
           break;
         }
-        final video = VideoReference.tryParse(data['video']);
-        if (video == null) break;
+        final video = data['type'] == 'video.task'
+            ? VideoReference.tryParse(data['video'])
+            : null;
+        final videoResults = VideoResultPage.tryParse(data);
+        if (video == null && videoResults == null) break;
         final index = _assistantIndexes[responseId];
         if (index != null && index < _messages.length) {
-          _messages[index] = _messages[index].copyWith(video: video);
+          _messages[index] = _messages[index].copyWith(
+            video: video,
+            videoResults: videoResults,
+          );
         } else {
           _assistantIndexes[responseId] = _messages.length;
           _messages.add(
@@ -619,6 +630,7 @@ class VoiceSessionController extends ChangeNotifier {
               text: '',
               responseId: responseId,
               video: video,
+              videoResults: videoResults,
             ),
           );
         }

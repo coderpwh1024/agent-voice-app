@@ -348,6 +348,7 @@ class ChatItem {
     this.toolNames = const [],
     this.memoryStatus,
     this.video,
+    this.videoResults,
   });
 
   factory ChatItem.fromJson(Map<String, dynamic> json) => ChatItem(
@@ -360,6 +361,11 @@ class ChatItem {
         .where((name) => name.isNotEmpty)
         .toList(growable: false),
     video: VideoReference.tryParse(
+      json['response_metadata'] is Map
+          ? (json['response_metadata'] as Map)['video']
+          : null,
+    ),
+    videoResults: VideoResultPage.tryParse(
       json['response_metadata'] is Map
           ? (json['response_metadata'] as Map)['video']
           : null,
@@ -377,6 +383,7 @@ class ChatItem {
   final List<String> toolNames;
   final MemoryStatus? memoryStatus;
   final VideoReference? video;
+  final VideoResultPage? videoResults;
 }
 
 class ThreadSummary {

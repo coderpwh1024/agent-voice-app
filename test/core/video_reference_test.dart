@@ -17,7 +17,79 @@ Map<String, Object?> videoSummary({
   'error_code': null,
 };
 
+Map<String, Object?> videoListSummary() => {
+  'type': 'video.list',
+  'items': [
+    videoSummary(),
+    {
+      ...videoSummary(),
+      'record_id': 43,
+      'title': '海边海鸥',
+      'qiniu_video_url': 'https://cdn.example/second.mp4',
+    },
+  ],
+  'total': 8,
+  'page': 1,
+  'page_size': 5,
+  'total_pages': 2,
+  'query': {'q': '海边'},
+};
+
 void main() {
+  test('search results survive history parsing and streamed text updates', () {
+    final item = ChatItem.fromJson({
+      'type': 'ai',
+      'content': '找到了八个视频',
+      'response_metadata': {'video': videoListSummary()},
+    });
+    final results = item.videoResults!;
+    expect(item.video, isNull);
+    expect(results.items.map((video) => video.recordId), [42, 43]);
+    expect(results.total, 8);
+    expect(results.items.last.displayTitle, '海边海鸥');
+    expect(
+      results.items.last.playableUri.toString(),
+      'https://cdn.example/second.mp4',
+    );
+    final entry = ConversationEntry(
+      role: item.role,
+      text: item.content,
+      videoResults: results,
+    );
+    expect(entry.copyWith(text: '查询第二个').videoResults, same(results));
+    expect(
+      VideoResultPage.tryParse({
+        ...videoListSummary(),
+        'items': [],
+        'total': 0,
+      })!.items,
+      isEmpty,
+    );
+  });
+
+  test(
+    'malformed result pages do not produce misleading selection numbers',
+    () {
+      for (final value in [
+        null,
+        {...videoListSummary(), 'type': 'other.list'},
+        {...videoListSummary(), 'items': null},
+        {
+          ...videoListSummary(),
+          'items': [
+            videoSummary(),
+            {'record_id': 'bad'},
+          ],
+        },
+        {...videoListSummary(), 'total': -1},
+        {...videoListSummary(), 'total': 1},
+        {...videoListSummary(), 'page': 0},
+        {...videoListSummary(), 'total_pages': -1},
+      ]) {
+        expect(VideoResultPage.tryParse(value), isNull);
+      }
+    },
+  );
   test(
     'history metadata and streamed text retain the complete video reference',
     () {

@@ -290,7 +290,9 @@ class _MessageBubble extends StatelessWidget {
               ),
               if (!human && message.memoryStatus != null)
                 MemoryStatusNote(status: message.memoryStatus!),
-              if (!human && message.video != null)
+              if (!human && message.videoResults != null)
+                VideoResultList(results: message.videoResults!, config: config)
+              else if (!human && message.video != null)
                 VideoMessageCard(video: message.video!, config: config),
             ],
           ),
@@ -334,7 +336,9 @@ class _MessageBubble extends StatelessWidget {
               ),
               if (!human && message.memoryStatus != null)
                 MemoryStatusNote(status: message.memoryStatus!),
-              if (!human && message.video != null)
+              if (!human && message.videoResults != null)
+                VideoResultList(results: message.videoResults!, config: config)
+              else if (!human && message.video != null)
                 VideoMessageCard(video: message.video!, config: config),
               if (message.content.trim().isNotEmpty &&
                   message.toolNames.isNotEmpty) ...[

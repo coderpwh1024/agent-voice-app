@@ -5,7 +5,7 @@ import 'package:agent_voice_app/core/config/app_config.dart';
 import 'package:agent_voice_app/features/voice_session/voice_session_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../core/video_reference_test.dart' show videoSummary;
+import '../core/video_reference_test.dart' show videoListSummary, videoSummary;
 import 'voice_session_controller_test.dart' show FakeAudioBridge, waitUntil;
 
 void main() {
@@ -13,6 +13,7 @@ void main() {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     WebSocket? socket;
     final received = <Map<String, dynamic>>[];
+    Object historyVideo = videoSummary();
     server.listen((request) async {
       if (WebSocketTransformer.isUpgradeRequest(request)) {
         socket = await WebSocketTransformer.upgrade(request);
@@ -46,7 +47,7 @@ void main() {
             {
               'type': 'ai',
               'content': '这是刚才的视频',
-              'response_metadata': {'video': videoSummary()},
+              'response_metadata': {'video': historyVideo},
             },
           ],
         };
@@ -140,9 +141,49 @@ void main() {
     await waitUntil(() => controller.messages.last.text.endsWith('请稍候。'));
     expect(controller.messages.last.video!.status, 'RUNNING');
     expect(controller.error, isNull);
+    emit('agent.custom', 'search-reply', {'data': videoListSummary()});
+    emit('response.started', 'search-reply');
+    emit('agent.custom', 'search-reply', {'data': videoListSummary()});
+    emit('text.delta', 'search-reply', {'text': '找到八个视频，先给你最近五个。'});
+    await waitUntil(() => controller.messages.last.text.contains('八个视频'));
+    expect(controller.messages.length, 3);
+    expect(
+      controller.messages.last.videoResults!.items.map((v) => v.recordId),
+      [42, 43],
+    );
+    expect(controller.messages.last.videoResults!.total, 8);
+    expect(
+      controller.messages.last.videoResults!.items.last.playableUri.toString(),
+      'https://cdn.example/second.mp4',
+    );
+    emit('agent.custom', 'search-reply', {
+      'data': {...videoListSummary(), 'items': 'bad'},
+    });
+    emit('response.cancelled', 'search-reply');
+    emit('agent.custom', 'search-reply', {
+      'data': {...videoListSummary(), 'items': [], 'total': 0},
+    });
+    emit('response.started', 'empty-reply');
+    emit('agent.custom', 'empty-reply', {
+      'data': {
+        ...videoListSummary(),
+        'items': [],
+        'total': 0,
+        'total_pages': 0,
+      },
+    });
+    emit('text.delta', 'empty-reply', {'text': '没有找到视频。'});
+    await waitUntil(() => controller.messages.last.text == '没有找到视频。');
+    expect(controller.messages[2].videoResults!.items.length, 2);
+    expect(controller.messages.last.videoResults!.items, isEmpty);
+    expect(controller.error, isNull);
     await controller.disconnect();
     await controller.loadHistory('chatbot', 'thread-1');
     expect(controller.messages.single.video!.playableUri, isNotNull);
+    historyVideo = videoListSummary();
+    await controller.loadHistory('chatbot', 'thread-1');
+    expect(controller.messages.single.videoResults!.items.length, 2);
+    expect(controller.messages.single.videoResults!.total, 8);
     expect(received.where((e) => e['type'] == 'input.text'), isEmpty);
   });
 }
