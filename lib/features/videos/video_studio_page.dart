@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/config/app_config.dart';
+import '../../core/api/video_reference.dart';
 import 'data/video_api.dart';
 import 'data/video_models.dart';
 import 'video_create_page.dart';
@@ -20,7 +21,7 @@ class _VideoStudioPageState extends State<VideoStudioPage> {
   List<VideoTask> _items = [];
   int _filter = 0, _total = 0, _page = 0, _totalPages = 0, _generation = 0;
   bool _loading = false, _loadingMore = false, _hasLoaded = false;
-  String? _error;
+  String? _error, _modelFilter;
   bool _failedMore = false;
   bool _grid = true;
   static const _filters = ['全部', '已完成', '生成中', '排队中', '生成失败'];
@@ -60,6 +61,7 @@ class _VideoStudioPageState extends State<VideoStudioPage> {
     try {
       final result = await _api.list(
         page: page,
+        model: _modelFilter,
         status: _statuses[_filter],
         storageStatus: _filter == 1 ? 'STORED' : null,
       );
@@ -288,6 +290,44 @@ class _VideoStudioPageState extends State<VideoStudioPage> {
                             ),
                           ],
                         ),
+                        const SizedBox(height: 20),
+                        DropdownButtonFormField<String>(
+                          key: ValueKey('video-model-filter:$_modelFilter'),
+                          initialValue: _modelFilter ?? 'all',
+                          isExpanded: true,
+                          isDense: false,
+                          itemHeight: null,
+                          decoration: const InputDecoration(labelText: '按模型筛选'),
+                          items: [
+                            const DropdownMenuItem(
+                              value: 'all',
+                              child: Text('全部模型'),
+                            ),
+                            for (final model in [
+                              ...VideoDraft.models,
+                              'happyhorse-1.0-video-edit',
+                            ])
+                              DropdownMenuItem(
+                                value: model,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 8,
+                                  ),
+                                  child: Text(VideoReference.modelName(model)),
+                                ),
+                              ),
+                          ],
+                          onChanged: (value) {
+                            final model = value == 'all' ? null : value;
+                            if (_modelFilter == model) return;
+                            setState(() {
+                              _modelFilter = model;
+                              _items = [];
+                              _hasLoaded = false;
+                            });
+                            _load();
+                          },
+                        ),
                         const SizedBox(height: 12),
                         SingleChildScrollView(
                           scrollDirection: Axis.horizontal,
@@ -374,7 +414,9 @@ class _VideoStudioPageState extends State<VideoStudioPage> {
                                 ),
                                 const SizedBox(height: 18),
                                 Text(
-                                  _filter == 0 ? '故事，留一页给你。' : '这里还没有影片',
+                                  _filter == 0 && _modelFilter == null
+                                      ? '故事，留一页给你。'
+                                      : '这里还没有影片',
                                   style: TextStyle(
                                     fontFamily: 'StudioSerif',
                                     color: p.ink,
@@ -383,7 +425,7 @@ class _VideoStudioPageState extends State<VideoStudioPage> {
                                 ),
                                 const SizedBox(height: 10),
                                 Text(
-                                  _filter == 0
+                                  _filter == 0 && _modelFilter == null
                                       ? '从第一段灵感，开始你的映像集。'
                                       : '换个筛选，看看其他作品。',
                                   textAlign: TextAlign.center,
@@ -589,6 +631,13 @@ class _FilmCard extends StatelessWidget {
                 style: TextStyle(color: p.muted, fontSize: 10, height: 1.5),
               ),
               const SizedBox(height: 8),
+              if (task.modelLabel != null) ...[
+                Text(
+                  task.modelLabel!,
+                  style: TextStyle(color: p.muted, fontSize: 11, height: 1.6),
+                ),
+                const SizedBox(height: 8),
+              ],
               VideoStatusBadge(task),
             ],
           ),

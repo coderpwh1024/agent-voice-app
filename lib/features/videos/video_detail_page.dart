@@ -250,6 +250,8 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                             '作品编号',
                             '#${task.id.toString().padLeft(4, '0')}',
                           ),
+                          if (task.modelLabel != null)
+                            _Info('生成模型', task.modelLabel!),
                           _Info('创建时间', videoDate(task.createdAt)),
                           _Info('最近更新', videoDate(task.updatedAt)),
                           _Info('生成状态', task.status),
@@ -260,6 +262,40 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                         ],
                       ),
                     ),
+                    if (task.firstFrameUrl?.isNotEmpty == true ||
+                        task.lastFrameUrl?.isNotEmpty == true) ...[
+                      const SizedBox(height: 16),
+                      VideoPanel(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const VideoEyebrow('SOURCE FRAMES'),
+                            const SizedBox(height: 12),
+                            Text(
+                              '生成素材',
+                              style: TextStyle(
+                                color: p.ink,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '首尾帧用于生成，作品封面以成片返回结果为准。',
+                              style: TextStyle(
+                                color: p.muted,
+                                fontSize: 12,
+                                height: 1.7,
+                              ),
+                            ),
+                            if (task.firstFrameUrl?.isNotEmpty == true)
+                              _Info('首帧图片', task.firstFrameUrl!),
+                            if (task.lastFrameUrl?.isNotEmpty == true)
+                              _Info('尾帧图片', task.lastFrameUrl!),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 20),
                     if (task.playableUri != null)
                       OutlinedButton.icon(

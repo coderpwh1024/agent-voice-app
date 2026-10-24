@@ -181,6 +181,13 @@ class VideoMessageCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 12),
+                if (video.modelLabel != null) ...[
+                  Text(
+                    video.modelLabel!,
+                    style: TextStyle(color: p.muted, fontSize: 12, height: 1.6),
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 VideoStatusBadge(video),
                 const SizedBox(height: 10),
                 Text(
@@ -278,6 +285,17 @@ class _ConversationVideoPage extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 12),
+                      if (video.modelLabel != null) ...[
+                        Text(
+                          video.modelLabel!,
+                          style: TextStyle(
+                            color: p.muted,
+                            fontSize: 12,
+                            height: 1.6,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
                       VideoStatusBadge(video),
                       const SizedBox(height: 14),
                       Text(

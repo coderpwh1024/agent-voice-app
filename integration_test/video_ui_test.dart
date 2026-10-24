@@ -62,6 +62,39 @@ void main() {
     await tester.pumpWidget(preview(VideoCreatePage(config: config, api: api)));
     await tester.pumpAndSettle();
     await binding.takeScreenshot('studio-create');
+    final modelPicker = find.byWidgetPredicate(
+      (w) =>
+          w is DropdownButtonFormField<String> &&
+          w.key.toString().contains('生成模型:'),
+    );
+    await Scrollable.ensureVisible(tester.element(modelPicker), alignment: .4);
+    await tester.pumpAndSettle();
+    await tester.tap(modelPicker);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('万相 3.0 · 标准版').last);
+    await tester.pumpAndSettle();
+    await binding.takeScreenshot('studio-wan-model');
+    await Scrollable.ensureVisible(
+      tester.element(find.byKey(const Key('video-first-frame'))),
+      alignment: .2,
+    );
+    await tester.pumpAndSettle();
+    await binding.takeScreenshot('studio-wan-frames');
+    await Scrollable.ensureVisible(
+      tester.element(find.byKey(const Key('video-submit'))),
+      alignment: .5,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('video-submit')));
+    await tester.pumpAndSettle();
+    expect(find.text('请填写画面描述或提供首帧图片'), findsOneWidget);
+    await binding.takeScreenshot('studio-wan-validation');
+    await Scrollable.ensureVisible(
+      tester.element(find.byKey(const Key('video-prompt'))),
+      alignment: .2,
+    );
+    await tester.pumpAndSettle();
+
     await tester.enterText(
       find.byKey(const Key('video-prompt')),
       '午后光线穿过窗边绿植，一杯咖啡升起热气，镜头缓慢推进。',
@@ -79,7 +112,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('预览封面'));
     await tester.pump(const Duration(seconds: 2));
-    await tester.drag(find.byType(ListView), const Offset(0, 220));
+    await tester.drag(find.byType(SingleChildScrollView), const Offset(0, 220));
     await tester.pumpAndSettle();
     await binding.takeScreenshot('studio-cover');
     await tester.pumpWidget(
@@ -109,7 +142,28 @@ void main() {
       final controller = tester
           .widget<VideoPlayer>(find.byType(VideoPlayer))
           .controller;
-      expect(controller.value.position, greaterThan(Duration.zero));
+      for (
+        var n = 0;
+        n < 40 &&
+            controller.value.position == Duration.zero &&
+            !controller.value.hasError;
+        n++
+      ) {
+        await tester.pump(const Duration(milliseconds: 500));
+      }
+      binding.reportData ??= {};
+      binding.reportData!['native_player_state'] = {
+        'initialized': controller.value.isInitialized,
+        'playing': controller.value.isPlaying,
+        'buffering': controller.value.isBuffering,
+        'has_error': controller.value.hasError,
+        'lifecycle': tester.binding.lifecycleState?.name,
+      };
+      expect(
+        controller.value.position,
+        greaterThan(Duration.zero),
+        reason: '${binding.reportData!['native_player_state']}',
+      );
       await binding.takeScreenshot('studio-playing');
       await controller.pause();
     }
@@ -127,6 +181,8 @@ void main() {
       'created_new_video': false,
       'grid_and_feed': true,
       'cover_preview': true,
+      'wan_model_and_frame_inputs': true,
+      'wan_empty_validation': true,
       'existing_video_playback': task.playableUri != null,
       'light_and_dark': true,
       'base_url': config.baseUrl,

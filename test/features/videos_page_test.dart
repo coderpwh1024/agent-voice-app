@@ -38,6 +38,7 @@ class FakeVideoApi extends VideoApi {
     int page = 1,
     String? status,
     String? storageStatus,
+    String? model,
   }) async {
     calls.add((page, status, storageStatus));
     if (failure != null) throw failure!;
@@ -74,6 +75,8 @@ Widget wrap(Widget home, {bool dark = false, double scale = 1}) => MaterialApp(
   home: home,
 );
 Future<void> tap(WidgetTester tester, Finder finder) async {
+  FocusManager.instance.primaryFocus?.unfocus();
+  await tester.pumpAndSettle();
   if (finder.evaluate().isEmpty) {
     await tester.scrollUntilVisible(
       finder,
@@ -81,7 +84,7 @@ Future<void> tap(WidgetTester tester, Finder finder) async {
       scrollable: find.byType(Scrollable).first,
     );
   } else {
-    await tester.ensureVisible(finder);
+    await Scrollable.ensureVisible(tester.element(finder), alignment: 0.4);
   }
   await tester.pumpAndSettle();
   await tester.tap(finder);
@@ -155,7 +158,10 @@ void main() {
       expect(api.keys.length, 2);
       expect(api.keys[0], api.keys[1]);
       expect(api.drafts[0], same(api.drafts[1]));
-      await tester.drag(find.byType(ListView), const Offset(0, 2000));
+      await tester.drag(
+        find.byType(SingleChildScrollView),
+        const Offset(0, 2000),
+      );
       await tester.pumpAndSettle();
       expect(
         tester
@@ -205,7 +211,10 @@ void main() {
     await tester.enterText(find.byKey(const Key('video-prompt')), '海边日落');
     await tap(tester, find.byKey(const Key('video-submit')));
     expect(api.pendingSubmission, isNull);
-    await tester.drag(find.byType(ListView), const Offset(0, 2000));
+    await tester.drag(
+      find.byType(SingleChildScrollView),
+      const Offset(0, 2000),
+    );
     await tester.pumpAndSettle();
     expect(
       tester

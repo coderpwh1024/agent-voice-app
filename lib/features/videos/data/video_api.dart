@@ -63,6 +63,7 @@ class VideoApi {
     int page = 1,
     String? status,
     String? storageStatus,
+    String? model,
   }) async {
     if (page < 1 || page > 2147483647) throw const ApiException(422, '页码无效');
     return VideoTaskPage.fromJson(
@@ -74,6 +75,7 @@ class VideoApi {
           'page_size': '20',
           'status': ?status,
           'storage_status': ?storageStatus,
+          'model': ?model,
         },
       ),
     );

@@ -91,8 +91,12 @@
 | HTTP `id` / 摘要 `record_id` | 同一个本地视频记录编号，分别按各自契约解析；不能与供应商 `task_id` 混用 |
 | `qiniu_video_url` → `videoUrl` | 持久视频地址；播放、复制入口使用 `VideoReference.playableUri` 的统一校验 |
 | `status` + `storage_status` | 两个独立状态，统一复用 `VideoReference` 的 `label`、`description`、`shouldPoll`、`playableUri` |
+| `model` → `model` | 创建可选 HappyHorse 1.1/1.0、万相 3.0 标准版/高速版；列表可按具体模型筛选；响应缺字段时不猜测历史模型 |
+| `first_frame_url` / `last_frame_url` | 仅万相生成输入，与展示封面独立；各最多 2048 Unicode 码点，去首尾空白，仅有效且无内嵌凭据的 HTTP(S)；尾帧依赖首帧 |
+| `audio` / `prompt_extend` | 仅万相可选布尔值；省略采用供应商默认 true，不向 HappyHorse 发送 |
 | `error_code`、时间与分页字段 | 保留后端语义；仅展示真实返回的信息，不虚构时长、提示词、画幅、模型或进度百分比 |
 
+- 模型约束统一由 `VideoDraft` 维护：HappyHorse 描述最多 5000 码点／2500 中文、3–15 秒、seed 0–2147483647；万相描述最多 20000 码点，有首帧可省略描述，时长 2–30 秒或 -1 智能时长，seed 可为 -1，比例仅 adaptive、21:9、16:9、4:3、1:1、3:4、9:16。模型切换不得把不兼容或隐藏的字段发送给另一个模型。
 - 字符长度使用 `.runes.length`，不以 UTF-16 `.length` 截断或误判中文、emoji。沿用 `VideoDraft` 验证和序列化，避免 UI 与数据层各写一套规则。
 - 缺标题或纯空白标题时使用 `VideoReference.displayTitle` 的编号回退，例如“影片 #0007”；旧记录缺字段仍应正常展示。
 - **返回值是最终展示依据。** 当前后端未填标题会从描述提取；成片封面由后端从实际视频提取并永久转存，可能替换提交时的 `cover_url`。客户端不把初始输入当成永久元数据，不自行截帧、上传或调用模型补齐。

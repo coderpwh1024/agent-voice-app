@@ -49,12 +49,27 @@ class VideoReference {
     this.errorCode,
     this.title,
     this.coverUrl,
+    this.model,
+    this.firstFrameUrl,
+    this.lastFrameUrl,
   });
 
   final int recordId;
   final String status, storageStatus;
   final String? videoUrl, errorCode;
-  final String? title, coverUrl;
+  final String? title, coverUrl, model, firstFrameUrl, lastFrameUrl;
+  static String modelName(String model) => switch (model) {
+    'happyhorse-1.1-t2v' => 'HappyHorse 1.1',
+    'happyhorse-1.0-t2v' => 'HappyHorse 1.0',
+    'happyhorse-1.0-video-edit' => 'HappyHorse 1.0 · 编辑',
+    'wan3.0-video' => '万相 3.0 · 标准版',
+    'wan3.0-video-prime' => '万相 3.0 · 高速版',
+    _ => model,
+  };
+  String? get modelLabel =>
+      model?.trim().isNotEmpty == true ? modelName(model!) : null;
+  Uri? get firstFrameUri => imageUri(firstFrameUrl);
+  Uri? get lastFrameUri => imageUri(lastFrameUrl);
 
   String get displayTitle => title?.trim().isNotEmpty == true
       ? title!.trim()
@@ -87,6 +102,13 @@ class VideoReference {
     }
     return VideoReference(
       recordId: id,
+      model: value['model'] is String ? value['model'] as String : null,
+      firstFrameUrl: value['first_frame_url'] is String
+          ? value['first_frame_url'] as String
+          : null,
+      lastFrameUrl: value['last_frame_url'] is String
+          ? value['last_frame_url'] as String
+          : null,
       status: status,
       storageStatus: storage,
       title: value['title'] is String ? value['title'] as String : null,
@@ -145,7 +167,10 @@ class VideoReference {
       'FAILED' => '视频已生成，保存暂未完成。后台会继续尝试，也可刷新查询。',
       _ => '视频已生成，正在保存。保存完成后即可播放。',
     },
-    'FAILED' => '这次生成未能完成。请核对任务状态和描述后，再决定是否新建。',
+    'FAILED' =>
+      errorCode == 'SUBMISSION_REJECTED'
+          ? '生成服务未接受此次请求。请核对模型与素材参数，或联系管理员检查服务权限与配置。'
+          : '这次生成未能完成。请核对任务状态和描述后，再决定是否新建。',
     'CANCELED' => '生成任务已由服务端取消。',
     'UNKNOWN' => '上游任务不存在或已过期，请联系服务管理员核实。',
     _ => '暂时无法识别当前状态，请稍后刷新查询。',

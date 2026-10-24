@@ -13,7 +13,13 @@ void main() {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     WebSocket? socket;
     final received = <Map<String, dynamic>>[];
-    Object historyVideo = videoSummary();
+    final wan = {
+      ...videoSummary(),
+      'model': 'wan3.0-video',
+      'first_frame_url': 'https://cdn.example/first.png',
+      'last_frame_url': 'https://cdn.example/last.png',
+    };
+    Object historyVideo = wan;
     server.listen((request) async {
       if (WebSocketTransformer.isUpgradeRequest(request)) {
         socket = await WebSocketTransformer.upgrade(request);
@@ -91,10 +97,10 @@ void main() {
     emit('response.started', 'reply-1');
     emit('text.delta', 'reply-1', {'text': '查到了。'});
     emit('agent.custom', 'reply-1', {
-      'data': {'type': 'video.task', 'video': videoSummary()},
+      'data': {'type': 'video.task', 'video': wan},
     });
     emit('agent.custom', 'reply-1', {
-      'data': {'type': 'video.task', 'video': videoSummary()},
+      'data': {'type': 'video.task', 'video': wan},
     });
     emit('text.delta', 'reply-1', {'text': '点击卡片播放。'});
     await waitUntil(
@@ -104,6 +110,11 @@ void main() {
     );
     expect(controller.messages.length, 1);
     expect(controller.messages.single.video!.recordId, 42);
+    expect(controller.messages.single.video!.modelLabel, '万相 3.0 · 标准版');
+    expect(
+      controller.messages.single.video!.firstFrameUrl,
+      wan['first_frame_url'],
+    );
     expect(controller.messages.single.video!.playableUri, isNotNull);
     emit('response.cancelled', 'reply-1');
     emit('agent.custom', 'reply-1', {
@@ -180,6 +191,10 @@ void main() {
     await controller.disconnect();
     await controller.loadHistory('chatbot', 'thread-1');
     expect(controller.messages.single.video!.playableUri, isNotNull);
+    expect(
+      controller.messages.single.video!.lastFrameUrl,
+      wan['last_frame_url'],
+    );
     historyVideo = videoListSummary();
     await controller.loadHistory('chatbot', 'thread-1');
     expect(controller.messages.single.videoResults!.items.length, 2);
