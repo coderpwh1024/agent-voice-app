@@ -140,7 +140,7 @@ class _MemoriesPageState extends State<MemoriesPage> {
                         eyebrow: 'A LITTLE MORE ABOUT YOU',
                         title: '被记住的小事。',
                         description: '你的偏好、习惯与重要的日常。\n查看和整理，让小美更懂现在的你。',
-                        icon: Icons.psychology_outlined,
+                        icon: Icons.bookmark_border_rounded,
                         stats: [
                           if (!_feed.loading && _feed.error == null)
                             '已加载 ${_feed.items.length} 条',
@@ -170,7 +170,7 @@ class _MemoriesPageState extends State<MemoriesPage> {
                           _feed.error == null &&
                           _feed.items.isEmpty)
                         const RecordStatus(
-                          icon: Icons.auto_awesome_outlined,
+                          icon: Icons.bookmark_border_rounded,
                           title: '故事，才刚刚开始',
                           description:
                               '目前还没有长期记忆。\n和 Mem0 · 小美聊聊你的日常，记忆会在这里慢慢积累。',
@@ -204,7 +204,7 @@ class _MemoriesPageState extends State<MemoriesPage> {
                                     Row(
                                       children: [
                                         Icon(
-                                          Icons.auto_awesome_outlined,
+                                          Icons.bookmark_border_rounded,
                                           color: palette.accent,
                                           size: 18,
                                         ),

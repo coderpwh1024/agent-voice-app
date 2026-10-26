@@ -34,13 +34,18 @@ class ChatPreviewController extends VoiceSessionController {
   });
 
   bool connected = false;
+  String? responseId;
+  VoiceConnectionState? previewState;
 
   @override
   bool get isConnected => connected;
 
   @override
+  String? get currentResponseId => responseId;
+
+  @override
   VoiceConnectionState get state => connected
-      ? VoiceConnectionState.listening
+      ? previewState ?? VoiceConnectionState.listening
       : VoiceConnectionState.disconnected;
 
   final entries = List.generate(
@@ -260,7 +265,65 @@ void main() {
     },
   );
 
+  testWidgets('composer exposes actions only when they can be used', (
+    tester,
+  ) async {
+    final controller = ChatPreviewController()..connected = true;
+    await mountChat(tester, controller);
+    expect(find.byTooltip('我要插话'), findsNothing);
+    final sendButton = find.byWidgetPredicate(
+      (widget) => widget is IconButton && widget.tooltip == '发送文字',
+    );
+    expect(tester.widget<IconButton>(sendButton).onPressed, isNull);
+
+    await tester.enterText(find.byType(TextField), '  今天很好  ');
+    await tester.pump();
+    expect(tester.widget<IconButton>(sendButton).onPressed, isNotNull);
+    await tester.enterText(find.byType(TextField), '   ');
+    await tester.pump();
+    expect(tester.widget<IconButton>(sendButton).onPressed, isNull);
+
+    controller.responseId = 'reply-1';
+    controller.previewState = VoiceConnectionState.thinking;
+    controller.redraw();
+    await tester.pump();
+    expect(find.byTooltip('我要插话'), findsOneWidget);
+    expect(find.byTooltip('发送文字'), findsOneWidget);
+
+    controller.previewState = VoiceConnectionState.speaking;
+    controller.redraw();
+    await tester.pump();
+    expect(find.byTooltip('我要插话'), findsOneWidget);
+    expect(find.byTooltip('立即停止回答'), findsOneWidget);
+    expect(find.byTooltip('发送文字'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final brightness in Brightness.values) {
+    testWidgets('interrupt controls fit 320px at 200% in $brightness', (
+      tester,
+    ) async {
+      final controller = ChatPreviewController()
+        ..connected = true
+        ..responseId = 'reply-1'
+        ..previewState = VoiceConnectionState.speaking;
+      await mountChat(
+        tester,
+        controller,
+        size: const Size(320, 640),
+        textScale: 2,
+        brightness: brightness,
+      );
+      expect(tester.takeException(), isNull);
+      for (final tooltip in ['我要插话', '立即停止回答']) {
+        final button = find.byWidgetPredicate(
+          (widget) => widget is IconButton && widget.tooltip == tooltip,
+        );
+        expect(tester.getSize(button).width, greaterThanOrEqualTo(48));
+        expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
+      }
+    });
+
     testWidgets(
       'fits a narrow screen, 200 percent text, keyboard and preferences in $brightness',
       (tester) async {

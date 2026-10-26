@@ -87,7 +87,7 @@ class VideoImageInput extends StatelessWidget {
               child: Row(
                 children: [
                   Icon(
-                    Icons.check_circle_outline,
+                    Icons.check_circle_outline_rounded,
                     size: 16,
                     color: p.accentInk,
                   ),
@@ -135,7 +135,7 @@ class VideoImageInput extends StatelessWidget {
                 TextButton.icon(
                   key: Key('$fieldKey-retry'),
                   onPressed: canEdit ? () => a.retry(api) : null,
-                  icon: const Icon(Icons.refresh, size: 18),
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
                   label: const Text('重新上传'),
                 ),
               if (hasImage)

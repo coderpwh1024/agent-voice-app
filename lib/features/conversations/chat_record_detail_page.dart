@@ -159,7 +159,7 @@ class _ChatRecordDetailPageState extends State<ChatRecordDetailPage> {
                     if (_loading) const RecordLoading(),
                     if (!_loading && _error != null)
                       RecordStatus(
-                        icon: Icons.cloud_off_rounded,
+                        icon: Icons.cloud_off_outlined,
                         title: '暂时无法打开记录',
                         description: _error!,
                         onRetry: _load,

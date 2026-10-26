@@ -112,7 +112,7 @@ class _ChatRecordsPageState extends State<ChatRecordsPage> {
                 builder: (_) => MemoriesPage(config: widget.config, api: _api),
               ),
             ),
-            icon: const Icon(Icons.psychology_outlined),
+            icon: const Icon(Icons.bookmark_border_rounded),
           ),
           IconButton(
             tooltip: '刷新聊天记录',
@@ -215,7 +215,7 @@ class _ChatRecordsPageState extends State<ChatRecordsPage> {
                     if (_loading) const RecordLoading(),
                     if (!_loading && _error != null)
                       RecordStatus(
-                        icon: Icons.cloud_off_rounded,
+                        icon: Icons.cloud_off_outlined,
                         title: '记录暂时没有到达',
                         description: _error!,
                         onRetry: _load,

@@ -866,7 +866,11 @@ class _VoiceHomePageState extends State<VoiceHomePage>
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.graphic_eq, size: 18, color: color),
+                          Icon(
+                            Icons.graphic_eq_rounded,
+                            size: 18,
+                            color: color,
+                          ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
@@ -919,6 +923,8 @@ class _VoiceHomePageState extends State<VoiceHomePage>
                   controller: _text,
                   maxLines: keyboardOpen ? (availableHeight < 420 ? 1 : 2) : 4,
                   enabled: connected,
+                  canInterrupt:
+                      connected && controller.currentResponseId != null,
                   isSpeaking: controller.state == VoiceConnectionState.speaking,
                   onSend: _sendText,
                   onStop: controller.cancelCurrent,
@@ -1219,7 +1225,7 @@ class _ConversationPreferences extends StatelessWidget {
                 initialValue: selectedAgent?.id,
                 decoration: const InputDecoration(
                   labelText: '助手',
-                  prefixIcon: Icon(Icons.auto_awesome_rounded, size: 19),
+                  prefixIcon: Icon(Icons.chat_bubble_outline_rounded, size: 19),
                   isDense: true,
                 ),
                 items: capabilities?.agents
@@ -1242,7 +1248,7 @@ class _ConversationPreferences extends StatelessWidget {
                 initialValue: selectedVoice,
                 decoration: const InputDecoration(
                   labelText: '音色',
-                  prefixIcon: Icon(Icons.spatial_audio_off_rounded, size: 19),
+                  prefixIcon: Icon(Icons.graphic_eq_rounded, size: 19),
                   isDense: true,
                 ),
                 items: capabilities?.voiceOptions
@@ -1291,7 +1297,7 @@ class _ConversationPreferences extends StatelessWidget {
               runSpacing: 8,
               children: [
                 _FeatureChip(
-                  icon: Icons.noise_control_off_rounded,
+                  icon: Icons.tune_rounded,
                   label: processingState!.noiseSuppressionEnabled
                       ? '智能降噪'
                       : '降噪不可用',
@@ -1659,6 +1665,7 @@ class _Composer extends StatelessWidget {
     required this.controller,
     required this.maxLines,
     required this.enabled,
+    required this.canInterrupt,
     required this.isSpeaking,
     required this.onSend,
     required this.onStop,
@@ -1668,6 +1675,7 @@ class _Composer extends StatelessWidget {
   final TextEditingController controller;
   final int maxLines;
   final bool enabled;
+  final bool canInterrupt;
   final bool isSpeaking;
   final VoidCallback onSend;
   final VoidCallback onStop;
@@ -1689,19 +1697,30 @@ class _Composer extends StatelessWidget {
           ),
           child: Row(
             children: [
-              IconButton.filledTonal(
-                tooltip: '我要插话',
-                onPressed: enabled ? onSpeechHint : null,
-                icon: const Icon(Icons.record_voice_over_rounded),
-              ),
-              const SizedBox(width: 6),
+              if (canInterrupt) ...[
+                IconButton.outlined(
+                  tooltip: '我要插话',
+                  onPressed: onSpeechHint,
+                  iconSize: 20,
+                  style: IconButton.styleFrom(
+                    foregroundColor: AppPalette(context).ink,
+                    side: BorderSide(color: AppPalette(context).border),
+                  ),
+                  icon: const Icon(Icons.mic_none_rounded),
+                ),
+                const SizedBox(width: 6),
+              ],
               Expanded(
                 child: TextField(
                   controller: controller,
                   minLines: 1,
                   maxLines: maxLines,
                   textInputAction: TextInputAction.send,
-                  onSubmitted: enabled ? (_) => onSend() : null,
+                  onSubmitted: enabled
+                      ? (value) {
+                          if (value.trim().isNotEmpty) onSend();
+                        }
+                      : null,
                   decoration: const InputDecoration(
                     hintText: '也可以写下想说的话…',
                     border: InputBorder.none,
@@ -1722,6 +1741,7 @@ class _Composer extends StatelessWidget {
                 IconButton.filled(
                   tooltip: '立即停止回答',
                   onPressed: onStop,
+                  iconSize: 20,
                   style: IconButton.styleFrom(
                     backgroundColor: Theme.of(context).colorScheme.error,
                     foregroundColor: Theme.of(context).colorScheme.onError,
@@ -1729,14 +1749,20 @@ class _Composer extends StatelessWidget {
                   icon: const Icon(Icons.stop_rounded),
                 )
               else
-                IconButton.filled(
-                  tooltip: '发送文字',
-                  onPressed: enabled ? onSend : null,
-                  style: IconButton.styleFrom(
-                    backgroundColor: AppPalette(context).ink,
-                    foregroundColor: AppPalette(context).background,
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: controller,
+                  builder: (context, value, _) => IconButton.filled(
+                    tooltip: '发送文字',
+                    onPressed: enabled && value.text.trim().isNotEmpty
+                        ? onSend
+                        : null,
+                    iconSize: 20,
+                    style: IconButton.styleFrom(
+                      backgroundColor: AppPalette(context).ink,
+                      foregroundColor: AppPalette(context).background,
+                    ),
+                    icon: const Icon(Icons.arrow_upward_rounded),
                   ),
-                  icon: const Icon(Icons.arrow_upward_rounded),
                 ),
             ],
           ),

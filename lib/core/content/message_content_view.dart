@@ -149,7 +149,7 @@ class _MessageContentViewState extends State<MessageContentView> {
           if (!_showAll && _content.images.length > 3)
             TextButton.icon(
               onPressed: () => setState(() => _showAll = true),
-              icon: const Icon(Icons.collections_outlined, size: 18),
+              icon: const Icon(Icons.photo_library_outlined, size: 18),
               label: Text('查看其余 ${_content.images.length - 3} 张图片'),
             ),
         ],
@@ -247,7 +247,7 @@ class _MessageImageTileState extends State<MessageImageTile> {
                       ),
                       TextButton.icon(
                         onPressed: _retry,
-                        icon: const Icon(Icons.refresh, size: 18),
+                        icon: const Icon(Icons.refresh_rounded, size: 18),
                         label: const Text('重新加载'),
                       ),
                     ],
@@ -411,7 +411,7 @@ class _MessageImagePage extends StatelessWidget {
                   ),
                   TextButton.icon(
                     onPressed: () => openMessageLink(context, resource.uri),
-                    icon: const Icon(Icons.open_in_new, size: 18),
+                    icon: const Icon(Icons.open_in_new_rounded, size: 18),
                     label: const Text('打开原图'),
                   ),
                 ],

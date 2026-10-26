@@ -50,7 +50,7 @@ class MemoryStatusNote extends StatelessWidget {
           Icon(
             status.hasWarning
                 ? Icons.info_outline_rounded
-                : Icons.psychology_outlined,
+                : Icons.bookmark_border_rounded,
             size: 14,
             color: color,
           ),

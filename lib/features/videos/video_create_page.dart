@@ -310,10 +310,6 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                                 }.entries)
                                   ActionChip(
                                     label: Text(entry.key),
-                                    avatar: const Icon(
-                                      Icons.auto_awesome_outlined,
-                                      size: 14,
-                                    ),
                                     onPressed: _editingLocked
                                         ? null
                                         : () => setState(
@@ -632,7 +628,12 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                                   color: p.background,
                                 ),
                               )
-                            : const Icon(Icons.auto_awesome_rounded, size: 19),
+                            : Icon(
+                                _locked
+                                    ? Icons.refresh_rounded
+                                    : Icons.movie_creation_outlined,
+                                size: 19,
+                              ),
                         label: Text(
                           _uploading
                               ? '图片上传中…'

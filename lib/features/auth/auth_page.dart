@@ -303,7 +303,7 @@ class _AuthPageState extends State<AuthPage> {
           onPressed: () => setState(() => _showServer = !_showServer),
           style: TextButton.styleFrom(alignment: Alignment.centerLeft),
           icon: Icon(
-            _showServer ? Icons.expand_less : Icons.tune_rounded,
+            _showServer ? Icons.expand_less_rounded : Icons.tune_rounded,
             size: 18,
           ),
           label: const Text('服务地址'),

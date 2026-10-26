@@ -259,7 +259,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   _ProfileCard(
                     children: [
                       _ActionRow(
-                        icon: Icons.psychology_outlined,
+                        icon: Icons.bookmark_border_rounded,
                         label: '长期记忆',
                         onTap: () => Navigator.of(context).push<void>(
                           MaterialPageRoute(
@@ -269,7 +269,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       ),
                       const _CardDivider(),
                       _ActionRow(
-                        icon: Icons.tune_rounded,
+                        icon: Icons.settings_outlined,
                         label: '连接设置',
                         onTap: () => widget.onOpenSettings(context),
                       ),

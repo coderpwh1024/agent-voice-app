@@ -140,7 +140,7 @@ class _HistoryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = RecordPalette(context);
     final (label, icon) = switch (entry.event) {
-      'ADD' => ('首次记住', Icons.auto_awesome_outlined),
+      'ADD' => ('首次记住', Icons.bookmark_add_outlined),
       'UPDATE' => ('更新记忆', Icons.edit_outlined),
       'DELETE' => ('删除记忆', Icons.delete_outline_rounded),
       _ => ('记忆变更', Icons.history_rounded),

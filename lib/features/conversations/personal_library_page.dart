@@ -71,7 +71,7 @@ class PersonalLibraryPage extends StatelessWidget {
               eyebrow: 'MEMORY',
               description: '小美记住的偏好与习惯。\n随时查看、修改，或让它忘记。',
               tag: 'Mem0 · 小美',
-              icon: Icons.psychology_outlined,
+              icon: Icons.bookmark_border_rounded,
               color: palette.lavender,
               onTap: () => Navigator.of(context).push<void>(
                 MaterialPageRoute(

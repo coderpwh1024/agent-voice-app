@@ -94,6 +94,32 @@ Future<void> tap(WidgetTester tester, Finder finder) async {
 }
 
 void main() {
+  testWidgets('studio icon actions stay tappable and open the expected page', (
+    tester,
+  ) async {
+    final api = FakeVideoApi();
+    addTearDown(api.close);
+    await tester.pumpWidget(wrap(VideoStudioPage(config: config, api: api)));
+    await tester.pumpAndSettle();
+    for (final tooltip in ['按编号查询', '新建影片']) {
+      final button = find.byWidgetPredicate(
+        (widget) => widget is IconButton && widget.tooltip == tooltip,
+      );
+      expect(tester.getSize(button).width, greaterThanOrEqualTo(48));
+      expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
+    }
+    await tester.tap(find.byTooltip('按编号查询'));
+    await tester.pumpAndSettle();
+    expect(find.text('查找影片'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('新建影片'));
+    await tester.pumpAndSettle();
+    expect(find.byType(VideoCreatePage), findsOneWidget);
+    expect(find.text('生成我的影片'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'filters and pagination preserve existing cards when loading more fails',
     (tester) async {

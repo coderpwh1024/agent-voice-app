@@ -305,7 +305,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                   child: Row(
                     children: [
                       Icon(
-                        Icons.error_outline,
+                        Icons.error_outline_rounded,
                         color: Theme.of(context).colorScheme.onErrorContainer,
                       ),
                       const SizedBox(width: 10),

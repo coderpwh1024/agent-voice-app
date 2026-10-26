@@ -180,12 +180,12 @@ class _VideoStudioPageState extends State<VideoStudioPage> {
             IconButton(
               tooltip: '按编号查询',
               onPressed: _lookup,
-              icon: const Icon(Icons.search_rounded, size: 23),
+              icon: const Icon(Icons.search_rounded),
             ),
             IconButton(
               tooltip: '新建影片',
               onPressed: _create,
-              icon: const Icon(Icons.add_rounded, size: 25),
+              icon: const Icon(Icons.add_rounded),
             ),
             const SizedBox(width: 12),
           ],

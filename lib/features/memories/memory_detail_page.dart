@@ -150,7 +150,7 @@ class _MemoryDetailPageState extends State<MemoryDetailPage> {
                   eyebrow: 'YOUR MEMORY, YOUR WORDS',
                   title: '让记忆，更准确。',
                   description: '生活在变化，你也可以更新助手记住的事。',
-                  icon: Icons.auto_awesome_outlined,
+                  icon: Icons.bookmark_border_rounded,
                 ),
                 const SizedBox(height: 22),
                 if (_loading || _writing) const MemoryLoading(),
