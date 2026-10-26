@@ -4,6 +4,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/api_models.dart';
 import '../../core/api/chat_record_models.dart';
 import '../../core/config/app_config.dart';
+import '../../core/content/message_content_view.dart';
 import '../videos/video_message_card.dart';
 import 'chat_record_widgets.dart';
 
@@ -284,8 +285,9 @@ class _MessageBubble extends StatelessWidget {
             childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             expandedCrossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SelectableText(
-                content,
+              MessageContentView(
+                text: content,
+                baseUrl: config.baseUrl,
                 style: TextStyle(color: palette.ink, fontSize: 13, height: 1.6),
               ),
               if (!human && message.memoryStatus != null)
@@ -330,8 +332,9 @@ class _MessageBubble extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 6),
-              SelectableText(
-                content,
+              MessageContentView(
+                text: content,
+                baseUrl: config.baseUrl,
                 style: TextStyle(color: palette.ink, fontSize: 15, height: 1.7),
               ),
               if (!human && message.memoryStatus != null)

@@ -32,6 +32,7 @@ class ConversationEntry {
     this.memoryStatus,
     this.video,
     this.videoResults,
+    this.isStreaming = false,
   });
 
   final String role;
@@ -40,11 +41,13 @@ class ConversationEntry {
   final MemoryStatus? memoryStatus;
   final VideoReference? video;
   final VideoResultPage? videoResults;
+  final bool isStreaming;
 
   ConversationEntry copyWith({
     String? text,
     VideoReference? video,
     VideoResultPage? videoResults,
+    bool? isStreaming,
   }) => ConversationEntry(
     role: role,
     text: text ?? this.text,
@@ -52,6 +55,7 @@ class ConversationEntry {
     memoryStatus: memoryStatus,
     video: video ?? this.video,
     videoResults: videoResults ?? this.videoResults,
+    isStreaming: isStreaming ?? this.isStreaming,
   );
 }
 
@@ -431,6 +435,7 @@ class VoiceSessionController extends ChangeNotifier {
       return;
     }
     _invalidResponses.add(responseId);
+    _finishMessage(responseId);
     _clearSpeechHintPause();
     await _audio.cancel(responseId);
     _socket!.sendJson(
@@ -581,10 +586,18 @@ class VoiceSessionController extends ChangeNotifier {
         _responseClock
           ..reset()
           ..start();
-        if (responseId != null && !_assistantIndexes.containsKey(responseId)) {
+        if (responseId != null && _assistantIndexes.containsKey(responseId)) {
+          final index = _assistantIndexes[responseId]!;
+          _messages[index] = _messages[index].copyWith(isStreaming: true);
+        } else if (responseId != null) {
           _assistantIndexes[responseId] = _messages.length;
           _messages.add(
-            ConversationEntry(role: 'ai', text: '', responseId: responseId),
+            ConversationEntry(
+              role: 'ai',
+              text: '',
+              responseId: responseId,
+              isStreaming: true,
+            ),
           );
         }
         _setState(VoiceConnectionState.thinking);
@@ -645,6 +658,7 @@ class VoiceSessionController extends ChangeNotifier {
         }
       case 'response.cancelled':
         if (responseId != null) {
+          _finishMessage(responseId);
           if (_pausedHintResponseId == responseId) _clearSpeechHintPause();
           _invalidResponses.add(responseId);
           await _audio.cancel(responseId);
@@ -656,6 +670,7 @@ class VoiceSessionController extends ChangeNotifier {
         _speechFrames = 0;
         _setState(VoiceConnectionState.listening);
       case 'response.done':
+        if (responseId != null) _finishMessage(responseId);
         final serverLatency = event['latency_ms'];
         if (serverLatency is Map) {
           for (final entry in serverLatency.entries) {
@@ -759,6 +774,16 @@ class VoiceSessionController extends ChangeNotifier {
       _setState(VoiceConnectionState.speaking);
     } catch (error) {
       _recordError(error);
+    }
+  }
+
+  void _finishMessage(String responseId) {
+    final index = _assistantIndexes[responseId];
+    if (index != null &&
+        index < _messages.length &&
+        _messages[index].isStreaming) {
+      _messages[index] = _messages[index].copyWith(isStreaming: false);
+      if (!_disposed) notifyListeners();
     }
   }
 
@@ -905,6 +930,9 @@ class VoiceSessionController extends ChangeNotifier {
     _tearingDown = true;
     _clearSpeechHintPause();
     try {
+      for (final responseId in _assistantIndexes.keys) {
+        _finishMessage(responseId);
+      }
       final socket = _socket;
       final oldSession = _session;
       _socket = null;

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../../core/api/api_models.dart';
+import '../../core/content/message_content_view.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/editorial_widgets.dart';
 import '../../core/api/video_reference.dart';
@@ -1573,12 +1574,14 @@ class _MessageBubble extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              SelectableText(
-                entry.text.isEmpty
+              MessageContentView(
+                text: entry.text.isEmpty
                     ? (entry.video == null && entry.videoResults == null
                           ? '…'
                           : '这是为你找到的视频。')
                     : entry.text,
+                baseUrl: config.baseUrl,
+                isStreaming: entry.isStreaming,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   height: 1.6,
                   color: palette.ink,

@@ -109,6 +109,7 @@ void main() {
           controller.messages.last.text.endsWith('播放。'),
     );
     expect(controller.messages.length, 1);
+    expect(controller.messages.single.isStreaming, isTrue);
     expect(controller.messages.single.video!.recordId, 42);
     expect(controller.messages.single.video!.modelLabel, '万相 3.0 · 标准版');
     expect(
@@ -139,6 +140,8 @@ void main() {
     );
     expect(controller.messages.first.video!.status, 'SUCCEEDED');
     expect(controller.messages.last.video!.status, 'RUNNING');
+    expect(controller.messages.first.isStreaming, isFalse);
+    expect(controller.messages.last.isStreaming, isTrue);
     emit('agent.custom', 'reply-2', {
       'data': {'type': 'other.task', 'video': videoSummary()},
     });
@@ -187,10 +190,13 @@ void main() {
     await waitUntil(() => controller.messages.last.text == '没有找到视频。');
     expect(controller.messages[2].videoResults!.items.length, 2);
     expect(controller.messages.last.videoResults!.items, isEmpty);
+    emit('response.done', 'empty-reply', {'audio_status': 'completed'});
+    await waitUntil(() => !controller.messages.last.isStreaming);
     expect(controller.error, isNull);
     await controller.disconnect();
     await controller.loadHistory('chatbot', 'thread-1');
     expect(controller.messages.single.video!.playableUri, isNotNull);
+    expect(controller.messages.single.isStreaming, isFalse);
     expect(
       controller.messages.single.video!.lastFrameUrl,
       wan['last_frame_url'],
