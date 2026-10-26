@@ -1,3 +1,5 @@
+import '../support/video_image_helpers.dart';
+
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -181,7 +183,7 @@ void main() {
         themed(VideoCreatePage(config: config, api: api)),
       );
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.byKey(const Key('video-cover-url')));
+      await openVideoImageAddress(tester, 'video-cover-url');
       await tester.enterText(
         find.byKey(const Key('video-cover-url')),
         'https://cdn.example/cover.jpg',

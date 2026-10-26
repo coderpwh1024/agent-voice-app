@@ -1,3 +1,5 @@
+import '../support/video_image_helpers.dart';
+
 import 'package:agent_voice_app/features/videos/data/video_models.dart';
 import 'package:agent_voice_app/features/videos/video_studio_page.dart';
 import 'package:agent_voice_app/features/videos/video_create_page.dart';
@@ -101,16 +103,12 @@ void main() {
       await tester.pumpWidget(wrap(VideoCreatePage(config: config, api: api)));
       await tester.pumpAndSettle();
       await chooseModel(tester, '万相 3.0 · 标准版');
-      await tester.scrollUntilVisible(
-        find.byKey(const Key('video-first-frame')),
-        200,
-        scrollable: find.byType(Scrollable).first,
-      );
+      await openVideoImageAddress(tester, 'video-first-frame');
       await tester.enterText(
         find.byKey(const Key('video-first-frame')),
         'https://cdn.example/first.png',
       );
-      await tester.ensureVisible(find.byKey(const Key('video-last-frame')));
+      await openVideoImageAddress(tester, 'video-last-frame');
       await tester.enterText(
         find.byKey(const Key('video-last-frame')),
         'https://cdn.example/last.png',

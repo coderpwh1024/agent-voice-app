@@ -136,6 +136,73 @@ class AgentApiClient {
     }
   }
 
+  /// Uploads one file once; callers decide whether an uncertain upload is retried.
+  Future<Map<String, dynamic>> uploadFileJson({
+    required Uint8List bytes,
+    required String name,
+    required String contentType,
+  }) async {
+    if (config.accessToken.trim().isEmpty) {
+      throw const ApiException(401, '请先登录');
+    }
+    final safeName = name.replaceAll('\\', '/').split('/').last.trim();
+    if (safeName.isEmpty ||
+        safeName.runes.length > 255 ||
+        safeName.runes.any((r) => r < 32 || r == 127) ||
+        !RegExp(r'^[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$')
+            .hasMatch(contentType)) {
+      throw const ApiException(422, '文件名称或格式无效');
+    }
+    if (bytes.isEmpty) throw const ApiException(422, '不能上传空文件');
+    final boundary =
+        '----AgentFile${DateTime.now().microsecondsSinceEpoch.toRadixString(16)}';
+    final encodedName = safeName.replaceAll('"', '%22');
+    final header = utf8.encode(
+      '--$boundary\r\nContent-Disposition: form-data; name="file"; filename="$encodedName"\r\nContent-Type: $contentType\r\n\r\n',
+    );
+    final footer = utf8.encode('\r\n--$boundary--\r\n');
+    HttpClientRequest? activeRequest;
+    var expired = false;
+    try {
+      return await (() async {
+        final request = await _httpClient.openUrl('POST', uri('/files'));
+        activeRequest = request;
+        if (expired) {
+          request.abort();
+          throw const ApiException(504, '上传超时');
+        }
+        request.followRedirects = false;
+        request.headers.set(
+          HttpHeaders.authorizationHeader,
+          'Bearer ${config.accessToken.trim()}',
+        );
+        request.headers.contentType = ContentType(
+          'multipart',
+          'form-data',
+          parameters: {'boundary': boundary},
+        );
+        request.contentLength = header.length + bytes.length + footer.length;
+        request.add(header);
+        await request.addStream(Stream<List<int>>.value(bytes));
+        request.add(footer);
+        return _decodeResponse(await request.close());
+      })().timeout(
+        const Duration(seconds: 150),
+        onTimeout: () {
+          expired = true;
+          activeRequest?.abort();
+          throw const ApiException(504, '上传结果未确认，请重新上传或更换图片');
+        },
+      );
+    } on SocketException {
+      throw const ApiException(0, '上传连接中断，请检查网络后重试');
+    } on HandshakeException {
+      throw const ApiException(0, '无法建立安全的上传连接');
+    } on FormatException {
+      throw const ApiException(502, '上传结果无法确认，请稍后再试');
+    }
+  }
+
   Future<VoiceSession> createVoiceSession({
     required String agentId,
     required String voice,

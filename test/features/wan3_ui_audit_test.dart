@@ -13,6 +13,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'videos_page_test.dart' show config, FakeVideoApi, tap;
 import 'wan3_video_page_test.dart' show chooseModel;
+import 'video_image_upload_test.dart'
+    show RecordingFiles, FixturePicker, pickImage;
+
+import 'package:agent_voice_app/core/api/api_client.dart';
 
 class AuditApi extends FakeVideoApi {
   bool empty = false;
@@ -79,6 +83,8 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       final api = AuditApi();
+      final files = RecordingFiles();
+      addTearDown(files.close);
       addTearDown(api.close);
       const boundaryKey = Key('wan-audit');
       Future<void> mount(
@@ -136,7 +142,12 @@ void main() {
         );
         await shot('collection-$dark');
         await mount(
-          VideoCreatePage(config: config, api: api),
+          VideoCreatePage(
+            config: config,
+            api: api,
+            fileApi: files,
+            imagePicker: FixturePicker(),
+          ),
           dark: dark,
         );
         await chooseModel(tester, '万相 3.0 · 标准版');
@@ -147,11 +158,20 @@ void main() {
         await tester.pumpAndSettle();
         await shot('create-$dark');
         await Scrollable.ensureVisible(
-          tester.element(find.byKey(const Key('video-first-frame'))),
+          tester.element(find.byKey(const Key('video-first-frame-pick'))),
           alignment: .2,
         );
         await tester.pumpAndSettle();
         await shot('frames-$dark');
+        files.failure = dark ? const ApiException(503, 'offline') : null;
+        await pickImage(tester, 'video-first-frame');
+        await Scrollable.ensureVisible(
+          tester.element(find.byKey(const Key('video-first-frame-pick'))),
+          alignment: .4,
+        );
+        await tester.pumpAndSettle();
+        await shot('upload-state-$dark');
+
         await tap(tester, find.text('更多设置'));
         await shot('settings-$dark');
         await mount(
@@ -176,14 +196,19 @@ void main() {
         api.empty = false;
         tester.view.physicalSize = const Size(320, 700);
         await mount(
-          VideoCreatePage(config: config, api: api),
+          VideoCreatePage(
+            config: config,
+            api: api,
+            fileApi: files,
+            imagePicker: FixturePicker(),
+          ),
           dark: dark,
           scale: 2,
         );
         await chooseModel(tester, '万相 3.0 · 高速版');
         await shot('large-model-$dark');
         await Scrollable.ensureVisible(
-          tester.element(find.byKey(const Key('video-first-frame'))),
+          tester.element(find.byKey(const Key('video-first-frame-pick'))),
           alignment: .15,
         );
         await tester.pumpAndSettle();

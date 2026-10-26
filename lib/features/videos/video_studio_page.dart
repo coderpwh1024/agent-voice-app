@@ -294,6 +294,7 @@ class _VideoStudioPageState extends State<VideoStudioPage> {
                         DropdownButtonFormField<String>(
                           key: ValueKey('video-model-filter:$_modelFilter'),
                           initialValue: _modelFilter ?? 'all',
+                          dropdownColor: p.surface,
                           isExpanded: true,
                           isDense: false,
                           itemHeight: null,

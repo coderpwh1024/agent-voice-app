@@ -230,7 +230,7 @@ void main() {
         );
         await tester.pumpAndSettle();
         await select(tester, '生成模型', '万相 3.0 · 高速版');
-        await reveal(tester, find.byKey(const Key('video-first-frame')));
+        await reveal(tester, find.byKey(const Key('video-first-frame-pick')));
         await binding.takeScreenshot('wan-frames-large-dark-$dark');
         await reveal(tester, find.byKey(const Key('video-submit')));
         await tester.tap(find.byKey(const Key('video-submit')));

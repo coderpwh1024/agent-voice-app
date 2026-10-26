@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/api/file_api.dart';
+import 'data/video_image.dart';
+import 'video_image_input.dart';
 import '../../core/config/app_config.dart';
 import '../../core/api/video_reference.dart';
 import 'data/video_api.dart';
@@ -9,9 +12,17 @@ import 'video_detail_page.dart';
 import 'video_widgets.dart';
 
 class VideoCreatePage extends StatefulWidget {
-  const VideoCreatePage({super.key, required this.config, this.api});
+  const VideoCreatePage({
+    super.key,
+    required this.config,
+    this.api,
+    this.fileApi,
+    this.imagePicker,
+  });
   final AppConfig config;
   final VideoApi? api;
+  final FileApi? fileApi;
+  final VideoImagePicker? imagePicker;
   @override
   State<VideoCreatePage> createState() => _VideoCreatePageState();
 }
@@ -25,8 +36,12 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
   final _lastFrame = TextEditingController();
   bool _audio = true, _promptExtend = true;
   bool get _isWan => VideoDraft.isWanModel(_model);
-  Uri? _previewCover;
-  String? _coverPreviewError;
+  late final FileApi _files;
+  late final VideoImagePicker _imagePicker;
+  late final VideoImageAttachment _firstImage, _lastImage, _coverImage;
+  bool get _uploading =>
+      _firstImage.busy || _lastImage.busy || _coverImage.busy;
+  bool get _editingLocked => _locked || _uploading;
   final _form = GlobalKey<FormState>();
   late final VideoApi _api;
   String _model = VideoDraft.models.first,
@@ -42,6 +57,8 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
   void initState() {
     super.initState();
     _api = widget.api ?? VideoApi(widget.config);
+    _files = widget.fileApi ?? FileApi(widget.config);
+    _imagePicker = widget.imagePicker ?? VideoImagePicker();
     final pending = _api.pendingSubmission;
     if (pending != null) {
       final draft = pending.draft;
@@ -50,7 +67,7 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
       _prompt.text = draft.prompt;
       _title.text = draft.title ?? '';
       _cover.text = draft.coverUrl ?? '';
-      _previewCover = VideoReference.imageUri(draft.coverUrl);
+
       _model = draft.model;
       _firstFrame.text = draft.firstFrameUrl ?? '';
       _lastFrame.text = draft.lastFrameUrl ?? '';
@@ -63,10 +80,22 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
       _seed.text = draft.seed?.toString() ?? '';
       _error = '还有一次提交的结果待确认。重试会核对原提交，避免重复生成。';
     }
+    _firstImage = VideoImageAttachment(_firstFrame)..addListener(_mediaChanged);
+    _lastImage = VideoImageAttachment(_lastFrame)..addListener(_mediaChanged);
+    _coverImage = VideoImageAttachment(_cover, forFrame: false)
+      ..addListener(_mediaChanged);
+  }
+
+  void _mediaChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    _firstImage.dispose();
+    _lastImage.dispose();
+    _coverImage.dispose();
+    if (widget.fileApi == null) _files.close();
     _prompt.dispose();
     _seed.dispose();
     _title.dispose();
@@ -78,7 +107,12 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
   }
 
   Future<void> _submit() async {
-    if (_submitting) return;
+    if (_submitting || _uploading) return;
+    if ((_isWan && (_firstImage.needsUpload || _lastImage.needsUpload)) ||
+        _coverImage.needsUpload) {
+      setState(() => _error = '请先完成图片上传，或移除未上传的图片');
+      return;
+    }
     if (VideoDraft.seedError(_seed.text, _model) case final error?) {
       setState(() => _error = error);
       return;
@@ -158,6 +192,7 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
   }) => DropdownButtonFormField<String>(
     key: ValueKey('$label:$value'),
     initialValue: value,
+    dropdownColor: VideoPalette(context).surface,
     isExpanded: true,
     isDense: false,
     itemHeight: null,
@@ -173,31 +208,11 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
           ),
         )
         .toList(),
-    onChanged: _locked
+    onChanged: _editingLocked
         ? null
         : (v) {
             if (v != null) setState(() => onChanged(v));
           },
-  );
-
-  Widget _frameField(
-    TextEditingController controller,
-    String label,
-    String key,
-  ) => TextFormField(
-    key: Key(key),
-    controller: controller,
-    enabled: !_locked,
-    keyboardType: TextInputType.url,
-    autocorrect: false,
-    minLines: 1,
-    maxLines: 3,
-    decoration: InputDecoration(
-      labelText: '$label图片 URL（可选）',
-      hintText: 'https://…/image.jpg',
-      helperText: label == '尾帧' ? '提供尾帧时必须同时提供首帧' : '有首帧时可以不填写画面描述',
-    ),
-    validator: (v) => VideoDraft.frameError(v, label),
   );
 
   @override
@@ -268,7 +283,7 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                             TextFormField(
                               key: const Key('video-prompt'),
                               controller: _prompt,
-                              enabled: !_locked,
+                              enabled: !_editingLocked,
                               minLines: 4,
                               maxLines: 9,
                               decoration: const InputDecoration(
@@ -299,7 +314,7 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                                       Icons.auto_awesome_outlined,
                                       size: 14,
                                     ),
-                                    onPressed: _locked
+                                    onPressed: _editingLocked
                                         ? null
                                         : () => setState(
                                             () => _prompt.text = entry.value,
@@ -337,7 +352,7 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                '仅文字、首帧或首尾帧均可创作。图片用于生成，与作品封面独立。',
+                                '从相册选择图片，上传完成后即可用于生成。也可以只写文字。',
                                 style: TextStyle(
                                   color: p.muted,
                                   fontSize: 12,
@@ -345,16 +360,28 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                                 ),
                               ),
                               const SizedBox(height: 16),
-                              _frameField(
-                                _firstFrame,
-                                '首帧',
-                                'video-first-frame',
+                              VideoImageInput(
+                                label: '首帧图片',
+                                fieldKey: 'video-first-frame',
+                                attachment: _firstImage,
+                                api: _files,
+                                picker: _imagePicker,
+                                enabled: !_editingLocked,
+                                helper: '选择一张图片，让它成为影片的开始。有首帧时，画面描述可以留空。',
                               ),
-                              const SizedBox(height: 16),
-                              _frameField(_lastFrame, '尾帧', 'video-last-frame'),
+                              const SizedBox(height: 20),
+                              VideoImageInput(
+                                label: '尾帧图片',
+                                fieldKey: 'video-last-frame',
+                                attachment: _lastImage,
+                                api: _files,
+                                picker: _imagePicker,
+                                enabled: !_editingLocked,
+                                helper: '可选；需要同时提供首帧，用它指定影片结束的画面。',
+                              ),
                               const SizedBox(height: 12),
                               Text(
-                                '使用公开可访问的 JPG、JPEG、PNG（无透明通道）、BMP 或 WEBP 图片；单边 240–8000 像素，宽高比不超过 8:1，单张不超过 20MB。实际素材由生成服务校验。',
+                                '支持 JPG、PNG（无透明通道）、WebP、BMP；每张不超过 20 MB，宽高 240–8000 像素，宽高比不超过 8:1。',
                                 style: TextStyle(
                                   color: p.muted,
                                   fontSize: 12,
@@ -395,7 +422,7 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                             TextFormField(
                               key: const Key('video-title'),
                               controller: _title,
-                              enabled: !_locked,
+                              enabled: !_editingLocked,
                               maxLines: 2,
                               minLines: 1,
                               decoration: const InputDecoration(
@@ -405,68 +432,37 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                               ),
                               validator: VideoDraft.titleError,
                             ),
-                            const SizedBox(height: 18),
-                            TextFormField(
-                              key: const Key('video-cover-url'),
-                              controller: _cover,
-                              enabled: !_locked,
-                              keyboardType: TextInputType.url,
-                              autocorrect: false,
-                              maxLines: 3,
-                              minLines: 1,
-                              decoration: InputDecoration(
-                                labelText: '暂存封面 URL（可选）',
-                                hintText: 'https://…/cover.jpg',
-                                helperText: '可留空；公开图片仅作暂存，成片后会自动替换为视频画面封面。',
-                                helperMaxLines: 6,
-                                errorText: _coverPreviewError,
+                            const SizedBox(height: 12),
+                            Text(
+                              '封面会从成片自动提取，无需另外准备。',
+                              style: TextStyle(
+                                color: p.muted,
+                                fontSize: 12,
+                                height: 1.7,
                               ),
-                              validator: VideoDraft.coverError,
-                              onChanged: (_) {
-                                if (_previewCover != null ||
-                                    _coverPreviewError != null) {
-                                  setState(() {
-                                    _previewCover = null;
-                                    _coverPreviewError = null;
-                                  });
-                                }
-                              },
                             ),
-                            const SizedBox(height: 8),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton.icon(
-                                onPressed: _locked
-                                    ? null
-                                    : () {
-                                        final error = VideoDraft.coverError(
-                                          _cover.text,
-                                        );
-                                        setState(
-                                          () => _coverPreviewError = error,
-                                        );
-                                        if (error == null) {
-                                          FocusScope.of(context).unfocus();
-                                          setState(
-                                            () => _previewCover =
-                                                VideoReference.imageUri(
-                                                  _cover.text,
-                                                ),
-                                          );
-                                        }
-                                      },
-                                icon: const Icon(
-                                  Icons.image_outlined,
-                                  size: 17,
+                            ExpansionTile(
+                              key: const Key('video-custom-cover'),
+                              tilePadding: EdgeInsets.zero,
+                              maintainState: true,
+                              initiallyExpanded: _cover.text.isNotEmpty,
+                              title: const Text(
+                                '自定义暂存封面（可选）',
+                                style: TextStyle(fontSize: 13),
+                              ),
+                              children: [
+                                VideoImageInput(
+                                  label: '暂存封面',
+                                  fieldKey: 'video-cover-url',
+                                  attachment: _coverImage,
+                                  api: _files,
+                                  picker: _imagePicker,
+                                  enabled: !_editingLocked,
+                                  helper: '仅作生成期间的展示封面，成片后由视频画面替换。',
+                                  previewLabel: '预览封面',
                                 ),
-                                label: const Text('预览封面'),
-                              ),
+                              ],
                             ),
-                            if (_previewCover != null)
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(6),
-                                child: VideoCover(uri: _previewCover),
-                              ),
                           ],
                         ),
                       ),
@@ -526,7 +522,7 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                                 title: const Text('智能时长'),
                                 subtitle: const Text('由模型决定影片长度'),
                                 value: _duration == -1,
-                                onChanged: _locked
+                                onChanged: _editingLocked
                                     ? null
                                     : (v) => setState(
                                         () => _duration = v ? -1 : 5,
@@ -540,7 +536,7 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                                 divisions: _isWan ? 28 : 12,
                                 label: '$_duration 秒',
                                 activeColor: p.accentInk,
-                                onChanged: _locked
+                                onChanged: _editingLocked
                                     ? null
                                     : (v) =>
                                           setState(() => _duration = v.round()),
@@ -559,7 +555,7 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                                     contentPadding: EdgeInsets.zero,
                                     title: const Text('生成音轨'),
                                     value: _audio,
-                                    onChanged: _locked
+                                    onChanged: _editingLocked
                                         ? null
                                         : (v) => setState(() => _audio = v),
                                   ),
@@ -568,7 +564,7 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                                     contentPadding: EdgeInsets.zero,
                                     title: const Text('智能改写提示词'),
                                     value: _promptExtend,
-                                    onChanged: _locked
+                                    onChanged: _editingLocked
                                         ? null
                                         : (v) =>
                                               setState(() => _promptExtend = v),
@@ -581,14 +577,14 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                                     style: TextStyle(fontSize: 14),
                                   ),
                                   value: _watermark,
-                                  onChanged: _locked
+                                  onChanged: _editingLocked
                                       ? null
                                       : (v) => setState(() => _watermark = v),
                                 ),
                                 TextFormField(
                                   key: const Key('video-seed'),
                                   controller: _seed,
-                                  enabled: !_locked,
+                                  enabled: !_editingLocked,
                                   keyboardType:
                                       const TextInputType.numberWithOptions(
                                         signed: true,
@@ -618,7 +614,7 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                       ],
                       FilledButton.icon(
                         key: const Key('video-submit'),
-                        onPressed: _submitting ? null : _submit,
+                        onPressed: _submitting || _uploading ? null : _submit,
                         style: FilledButton.styleFrom(
                           backgroundColor: p.ink,
                           foregroundColor: p.background,
@@ -638,7 +634,9 @@ class _VideoCreatePageState extends State<VideoCreatePage> {
                               )
                             : const Icon(Icons.auto_awesome_rounded, size: 19),
                         label: Text(
-                          _submitting
+                          _uploading
+                              ? '图片上传中…'
+                              : _submitting
                               ? '正在提交，请稍候…'
                               : _locked
                               ? '核对并重试原提交'

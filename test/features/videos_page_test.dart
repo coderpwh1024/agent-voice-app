@@ -1,3 +1,5 @@
+import '../support/video_image_helpers.dart';
+
 import 'package:agent_voice_app/core/api/api_client.dart';
 import 'package:agent_voice_app/core/config/app_config.dart';
 import 'package:agent_voice_app/features/videos/data/video_api.dart';
@@ -144,7 +146,7 @@ void main() {
       await tester.enterText(find.byKey(const Key('video-prompt')), '海边日落');
       await tester.ensureVisible(find.byKey(const Key('video-title')));
       await tester.enterText(find.byKey(const Key('video-title')), '我的日落');
-      await tester.ensureVisible(find.byKey(const Key('video-cover-url')));
+      await openVideoImageAddress(tester, 'video-cover-url');
       await tester.enterText(
         find.byKey(const Key('video-cover-url')),
         'https://cdn.example/sunset.jpg',
@@ -244,7 +246,7 @@ void main() {
     await tester.pumpWidget(wrap(VideoCreatePage(config: config, api: api)));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const Key('video-prompt')), '海边日落');
-    await tester.ensureVisible(find.byKey(const Key('video-cover-url')));
+    await openVideoImageAddress(tester, 'video-cover-url');
     await tester.enterText(
       find.byKey(const Key('video-cover-url')),
       'file:///private/photo.jpg',

@@ -1,3 +1,5 @@
+import '../test/support/video_image_helpers.dart';
+
 import 'package:agent_voice_app/core/config/app_config.dart';
 import 'package:agent_voice_app/features/videos/data/video_api.dart';
 import 'package:agent_voice_app/features/videos/video_create_page.dart';
@@ -26,6 +28,9 @@ void main() {
   testWidgets('USB editorial studio: real gallery, creation and playback', (
     tester,
   ) async {
+    // The integration binding resets lifecycle between testWidgets cases.
+    // This driver runs against a foreground, unlocked USB device.
+    binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     final AppConfig config = await backendTestConfig();
     final api = VideoApi(config);
     addTearDown(api.close);
@@ -75,7 +80,7 @@ void main() {
     await tester.pumpAndSettle();
     await binding.takeScreenshot('studio-wan-model');
     await Scrollable.ensureVisible(
-      tester.element(find.byKey(const Key('video-first-frame'))),
+      tester.element(find.byKey(const Key('video-first-frame-pick'))),
       alignment: .2,
     );
     await tester.pumpAndSettle();
@@ -101,7 +106,7 @@ void main() {
     );
     await tester.ensureVisible(find.byKey(const Key('video-title')));
     await tester.enterText(find.byKey(const Key('video-title')), '光落下的地方');
-    await tester.ensureVisible(find.byKey(const Key('video-cover-url')));
+    await openVideoImageAddress(tester, 'video-cover-url');
     await tester.enterText(
       find.byKey(const Key('video-cover-url')),
       task.coverUrl ?? '',
@@ -164,6 +169,7 @@ void main() {
         greaterThan(Duration.zero),
         reason: '${binding.reportData!['native_player_state']}',
       );
+      await tester.pump(const Duration(milliseconds: 300));
       await binding.takeScreenshot('studio-playing');
       await controller.pause();
     }

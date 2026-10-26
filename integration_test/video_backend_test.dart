@@ -1,3 +1,5 @@
+import '../test/support/video_image_helpers.dart';
+
 import 'dart:io';
 
 import 'package:agent_voice_app/core/api/api_client.dart';
@@ -59,7 +61,7 @@ void main() {
     );
     await tester.ensureVisible(find.byKey(const Key('video-title')));
     await tester.enterText(find.byKey(const Key('video-title')), '湖畔来信 · 日落之前');
-    await tester.ensureVisible(find.byKey(const Key('video-cover-url')));
+    await openVideoImageAddress(tester, 'video-cover-url');
     await tester.enterText(
       find.byKey(const Key('video-cover-url')),
       'https://www.bing.com/th?id=OHR.NaejangsanNP_ZH-CN6538893004_1920x1080.jpg',
