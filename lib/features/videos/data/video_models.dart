@@ -1,5 +1,35 @@
 import '../../../core/api/video_reference.dart';
 
+/// Only changed display metadata is sent to the backend PATCH endpoint.
+class VideoMetadataUpdate {
+  const VideoMetadataUpdate({this.title, this.coverUrl});
+
+  final String? title, coverUrl;
+
+  static String? titleError(String value) {
+    if (value.trim().isEmpty) return '请填写作品标题';
+    if (value.trim().runes.length > 35) return '作品标题最多 35 个字符';
+    return null;
+  }
+
+  String? get validationError {
+    if (title == null && coverUrl == null) return '请先修改标题或封面';
+    if (title != null) {
+      if (titleError(title!) case final error?) return error;
+    }
+    if (coverUrl != null) {
+      if (coverUrl!.trim().isEmpty) return '请选择新的封面图片';
+      if (VideoDraft.coverError(coverUrl) case final error?) return error;
+    }
+    return null;
+  }
+
+  Map<String, Object?> toJson() => {
+    if (title != null) 'title': title!.trim(),
+    if (coverUrl != null) 'cover_url': coverUrl!.trim(),
+  };
+}
+
 class VideoDraft {
   const VideoDraft({
     required this.prompt,

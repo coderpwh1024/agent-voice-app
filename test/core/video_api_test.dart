@@ -146,6 +146,66 @@ void main() {
     },
   );
 
+  test('PATCH and DELETE use the authenticated metadata contract', () async {
+    final calls = <String>[];
+    server.listen((request) async {
+      calls.add('${request.method} ${request.uri.path}');
+      expect(request.headers.value('authorization'), 'Bearer test-token');
+      expect(request.headers.value('idempotency-key'), isNull);
+      if (request.method == 'PATCH') {
+        expect(jsonDecode(await utf8.decoder.bind(request).join()), {
+          'title': '新标题',
+          'cover_url': 'https://cdn.example/new.jpg',
+        });
+        request.response.write(
+          jsonEncode({
+            'code': 200,
+            'data': {
+              ...videoJson(),
+              'title': '新标题',
+              'cover_url': 'https://cdn.example/new.jpg',
+            },
+          }),
+        );
+      } else {
+        expect(request.method, 'DELETE');
+        request.response.write(
+          jsonEncode({
+            'code': 200,
+            'data': {'deleted': true},
+          }),
+        );
+      }
+      await request.response.close();
+    });
+    final result = await api.updateMetadata(
+      42,
+      const VideoMetadataUpdate(
+        title: ' 新标题 ',
+        coverUrl: ' https://cdn.example/new.jpg ',
+      ),
+    );
+    expect(result.title, '新标题');
+    expect(result.coverUrl, 'https://cdn.example/new.jpg');
+    await api.delete(42);
+    expect(calls, ['PATCH /videos/42', 'DELETE /videos/42']);
+  });
+
+  test('edit enforces 35 Unicode code points and rejects invalid payloads before HTTP', () {
+    expect(VideoMetadataUpdate(title: '😀' * 35).validationError, isNull);
+    expect(VideoMetadataUpdate(title: '😀' * 36).validationError, isNotNull);
+    expect(const VideoMetadataUpdate(title: '  ').validationError, isNotNull);
+    expect(const VideoMetadataUpdate().validationError, isNotNull);
+    expect(
+      const VideoMetadataUpdate(coverUrl: 'file:///a.jpg').validationError,
+      isNotNull,
+    );
+    expect(
+      const VideoMetadataUpdate(coverUrl: 'https://cdn.example/a.jpg').toJson(),
+      {'cover_url': 'https://cdn.example/a.jpg'},
+    );
+  });
+
   test(
     'optional metadata remains compatible and validates before submission',
     () {

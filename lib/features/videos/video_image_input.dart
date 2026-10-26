@@ -16,6 +16,9 @@ class VideoImageInput extends StatelessWidget {
     this.enabled = true,
     this.helper,
     this.previewLabel,
+    this.preferUploadedPreview = false,
+    this.expandAddressInitially,
+    this.allowRemove = true,
   });
   final String label, fieldKey;
   final String? helper, previewLabel;
@@ -23,6 +26,9 @@ class VideoImageInput extends StatelessWidget {
   final FileApi api;
   final VideoImagePicker picker;
   final bool enabled;
+  final bool preferUploadedPreview;
+  final bool? expandAddressInitially;
+  final bool allowRemove;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -57,7 +63,9 @@ class VideoImageInput extends StatelessWidget {
               image: true,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(7),
-                child: a.file != null
+                child:
+                    a.file != null &&
+                        !(preferUploadedPreview && a.uploaded != null)
                     ? Container(
                         color: p.blush,
                         height: 176,
@@ -138,7 +146,7 @@ class VideoImageInput extends StatelessWidget {
                   icon: const Icon(Icons.refresh_rounded, size: 18),
                   label: const Text('重新上传'),
                 ),
-              if (hasImage)
+              if (hasImage && allowRemove)
                 TextButton(
                   key: Key('$fieldKey-remove'),
                   onPressed: canEdit ? a.clear : null,
@@ -155,7 +163,9 @@ class VideoImageInput extends StatelessWidget {
             key: Key('$fieldKey-address'),
             tilePadding: EdgeInsets.zero,
             maintainState: true,
-            initiallyExpanded: a.file == null && a.url.text.trim().isNotEmpty,
+            initiallyExpanded:
+                expandAddressInitially ??
+                (a.file == null && a.url.text.trim().isNotEmpty),
             title: Text(
               '使用图片地址',
               style: TextStyle(color: p.muted, fontSize: 12),

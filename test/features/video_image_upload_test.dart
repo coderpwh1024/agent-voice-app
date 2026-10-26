@@ -4,7 +4,9 @@ import 'dart:typed_data';
 import 'package:agent_voice_app/core/api/api_client.dart';
 import 'package:agent_voice_app/core/api/file_api.dart';
 import 'package:agent_voice_app/features/videos/data/video_image.dart';
+import 'package:agent_voice_app/features/videos/data/video_models.dart';
 import 'package:agent_voice_app/features/videos/video_create_page.dart';
+import 'package:agent_voice_app/features/videos/video_edit_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -46,6 +48,8 @@ class RecordingFiles extends FileApi {
 }
 
 Future<void> pickImage(WidgetTester tester, String key) async {
+  FocusManager.instance.primaryFocus?.unfocus();
+  await tester.pumpAndSettle();
   final button = find.byKey(Key('$key-pick'));
   await Scrollable.ensureVisible(tester.element(button), alignment: .4);
   await tester.pumpAndSettle();
@@ -59,6 +63,53 @@ Future<void> pickImage(WidgetTester tester, String key) async {
 }
 
 void main() {
+  testWidgets('cover upload finishes before edit PATCH and uses returned URL', (
+    tester,
+  ) async {
+    final videos = FakeVideoApi();
+    final files = RecordingFiles()..gate = Completer<UploadedFileMetadata>();
+    addTearDown(videos.close);
+    addTearDown(files.close);
+    await tester.pumpWidget(
+      wrap(
+        VideoEditPage(
+          config: config,
+          task: VideoTask(
+            id: 9,
+            status: 'SUCCEEDED',
+            storageStatus: 'STORED',
+            title: '旧标题',
+            coverUrl: 'https://cdn.example/old.jpg',
+            createdAt: DateTime.utc(2026, 10, 22),
+            updatedAt: DateTime.utc(2026, 10, 22),
+          ),
+          api: videos,
+          fileApi: files,
+          imagePicker: FixturePicker(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('video-edit-title')), '新标题');
+    await pickImage(tester, 'video-edit-cover');
+    expect(files.names, ['画面.bmp']);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('video-edit-save')))
+          .onPressed,
+      isNull,
+    );
+    expect(videos.updates, isEmpty);
+    files.gate!.complete(files.result(1));
+    await tester.pumpAndSettle();
+    expect(find.text('图片已上传'), findsOneWidget);
+    await tap(tester, find.byKey(const Key('video-edit-save')));
+    expect(videos.updates.single.toJson(), {
+      'title': '新标题',
+      'cover_url': 'https://cdn.example/image-1.bmp',
+    });
+    expect(files.names.length, 1);
+  });
   testWidgets(
     'generation waits for upload and retries reuse uploaded frame URLs',
     (tester) async {

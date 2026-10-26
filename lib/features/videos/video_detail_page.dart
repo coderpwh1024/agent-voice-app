@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/config/app_config.dart';
+import '../../core/api/api_client.dart';
 import 'data/video_api.dart';
 import 'data/video_models.dart';
+import 'video_edit_page.dart';
 import 'video_widgets.dart';
 import 'video_playback.dart';
 
@@ -33,6 +35,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
   VideoTask? _task;
   String? _error;
   bool _loading = false, _active = true;
+  bool _mutating = false;
   Timer? _timer;
   int _polls = 0;
   @override
@@ -65,7 +68,11 @@ class _VideoDetailPageState extends State<VideoDetailPage>
 
   void _schedule() {
     _timer?.cancel();
-    if (_active && _task?.shouldPoll == true && _polls < 60 && _error == null) {
+    if (_active &&
+        !_mutating &&
+        _task?.shouldPoll == true &&
+        _polls < 60 &&
+        _error == null) {
       _timer = Timer(const Duration(seconds: 10), () {
         _polls++;
         _refresh();
@@ -74,7 +81,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
   }
 
   Future<void> _refresh() async {
-    if (_loading) return;
+    if (_loading || _mutating) return;
     _timer?.cancel();
     setState(() {
       _loading = true;
@@ -82,12 +89,119 @@ class _VideoDetailPageState extends State<VideoDetailPage>
     });
     try {
       final task = await _api.detail(widget.recordId);
-      if (mounted) setState(() => _task = task);
+      if (mounted && !_mutating) setState(() => _task = task);
     } catch (error) {
-      if (mounted) setState(() => _error = videoError(error));
+      if (mounted && !_mutating) setState(() => _error = videoError(error));
     } finally {
       if (mounted) {
         setState(() => _loading = false);
+        _schedule();
+      }
+    }
+  }
+
+  Future<void> _edit(VideoTask task) async {
+    if (_mutating) return;
+    _timer?.cancel();
+    setState(() => _mutating = true);
+    final updated = await Navigator.of(context).push<VideoTask>(
+      MaterialPageRoute(
+        builder: (_) =>
+            VideoEditPage(config: widget.config, task: task, api: _api),
+      ),
+    );
+    if (!mounted) return;
+    setState(() {
+      _mutating = false;
+      if (updated != null) {
+        _task = updated;
+        _error = null;
+      }
+    });
+    if (updated != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('作品信息已更新')));
+    }
+    _schedule();
+  }
+
+  Future<void> _delete(VideoTask task) async {
+    if (_mutating) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        final p = VideoPalette(dialogContext);
+        return AlertDialog(
+          scrollable: true,
+          title: const Text('删除这部影片？'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                task.displayTitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: p.ink, fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                '删除后将从作品列表移除，无法在 App 中找回。此操作不会取消已经开始的生成任务。',
+                style: TextStyle(color: p.muted, height: 1.7, fontSize: 13),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('保留影片'),
+            ),
+            TextButton(
+              key: const Key('video-delete-confirm'),
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(dialogContext).colorScheme.error,
+                minimumSize: const Size(0, 48),
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('确认删除'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !mounted) return;
+    _timer?.cancel();
+    setState(() {
+      _mutating = true;
+      _error = null;
+    });
+    try {
+      await _api.delete(task.id);
+      if (mounted) Navigator.of(context).pop();
+    } catch (error) {
+      if (!mounted) return;
+      var deleted = false;
+      if (error is ApiException &&
+          (error.statusCode == 504 || error.statusCode == 502)) {
+        try {
+          await _api.detail(task.id);
+        } on ApiException catch (check) {
+          deleted = check.statusCode == 404;
+        } catch (_) {}
+      }
+      if (!mounted) return;
+      if (deleted) {
+        Navigator.of(context).pop();
+        return;
+      }
+      setState(
+        () => _error = error is ApiException && error.statusCode == 409
+            ? '作品正在同步，请稍后再删除。'
+            : '删除结果未确认。${videoError(error)}请刷新作品列表核对后再操作。',
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _mutating = false);
         _schedule();
       }
     }
@@ -108,7 +222,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
           actions: [
             IconButton(
               tooltip: '刷新任务',
-              onPressed: _loading
+              onPressed: _loading || _mutating
                   ? null
                   : () {
                       _polls = 0;
@@ -176,11 +290,48 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                     VideoNotice(
                       _error!,
                       error: true,
-                      onRetry: _loading ? null : _refresh,
+                      onRetry: _loading || _mutating ? null : _refresh,
                     ),
                     const SizedBox(height: 16),
                   ],
                   if (task != null) ...[
+                    VideoPanel(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const VideoEyebrow('YOUR FILM'),
+                          const SizedBox(height: 12),
+                          Text(
+                            '作品管理',
+                            style: TextStyle(
+                              color: p.ink,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '整理标题与封面，让作品保持你喜欢的样子。',
+                            style: TextStyle(
+                              color: p.muted,
+                              fontSize: 12,
+                              height: 1.7,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          OutlinedButton.icon(
+                            key: const Key('video-edit-open'),
+                            onPressed: _mutating ? null : () => _edit(task),
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size(0, 48),
+                            ),
+                            icon: const Icon(Icons.edit_outlined, size: 18),
+                            label: const Text('编辑标题与封面'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     VideoPanel(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -324,6 +475,25 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                           height: 1.8,
                         ),
                       ),
+                    const SizedBox(height: 20),
+                    Divider(color: p.border),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        key: const Key('video-delete-open'),
+                        onPressed: _mutating ? null : () => _delete(task),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Theme.of(context).colorScheme.error,
+                          minimumSize: const Size(0, 48),
+                        ),
+                        icon: const Icon(
+                          Icons.delete_outline_rounded,
+                          size: 18,
+                        ),
+                        label: const Text('删除这部影片'),
+                      ),
+                    ),
                   ],
                 ],
               ),

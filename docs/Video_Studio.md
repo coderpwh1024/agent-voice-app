@@ -1,6 +1,6 @@
 # 视频工作室
 
-独立模块位于 `lib/features/videos/`：`data/` 维护请求与契约，`video_studio_page.dart` 维护作品列表，`video_create_page.dart` 维护生成表单，`video_detail_page.dart` 维护查询、轮询和播放器，`video_widgets.dart` 维护视觉组件，`video_image_input.dart` 与 `data/video_image.dart` 复用图片选择、校验、上传和预览。复用现有 `AgentApiClient` 的 Bearer 认证和统一响应解析；不持有模型或七牛密钥。
+独立模块位于 `lib/features/videos/`：`data/` 维护请求与契约，`video_studio_page.dart` 维护作品列表，`video_create_page.dart` 维护生成表单，`video_detail_page.dart` 维护查询、轮询和播放器，`video_edit_page.dart` 维护标题与封面编辑，`video_widgets.dart` 维护视觉组件，`video_image_input.dart` 与 `data/video_image.dart` 复用图片选择、校验、上传和预览。复用现有 `AgentApiClient` 的 Bearer 认证和统一响应解析；不持有模型或七牛密钥。
 
 ## 入口与设计
 
@@ -27,12 +27,14 @@
 | 生成 | `POST /videos`，带 `Idempotency-Key`，解析 HTTP 202 中的统一响应 |
 | 列表 | `GET /videos?page=1&page_size=20`，按需传 `status`、`storage_status`、`model` |
 | 详情 | `GET /videos/{record_id}`，可从列表进入或按编号查询 |
+| 编辑展示信息 | `PATCH /videos/{record_id}`，只提交改变的标题和／或封面 URL |
+| 删除作品 | `DELETE /videos/{record_id}`，二次确认后从作品列表移除 |
 
 身份由当前 Bearer 令牌绑定，不向视频接口发送 `user_id`。列表显示后端真实 `total`，按后端页码加载，去除并发变化可能带来的重复 ID。筛选包括全部、已完成（生成成功且已转存）、生成中、排队中、生成失败；其他状态仍可在“全部”与详情查看。分页失败保留已加载作品，刷新失败可重试原刷新。
 
 表单支持两个 HappyHorse 模型、全部九种比例、480P/720P/1080P、3–15 秒、水印与可选随机种子。1.0 模型不会发送 480P。按 Unicode 码点验证最多 5000 字符及最多 2500 个中日韩统一表意文字，种子范围 0–2147483647。
 
-万相 3.0 标准版 `wan3.0-video` 和高速版 `wan3.0-video-prime` 共用上述三接口、分页、状态、封面与播放器。已核对后端 `docs/Video_API.md`、`src/schema/video.py`、`src/service/video.py`、供应商适配与服务实现，以及本地运行服务的 `/openapi.json`，当前契约一致。
+万相 3.0 标准版 `wan3.0-video` 和高速版 `wan3.0-video-prime` 共用上述视频接口、分页、状态、封面与播放器。已核对后端 `docs/Video_API.md`、`src/schema/video.py`、`src/service/video.py`、供应商适配与服务实现，以及本地运行服务的 `/openapi.json`，当前契约一致。
 
 | 万相参数 | 前端行为 |
 | --- | --- |
@@ -57,6 +59,8 @@
 后端公开任务包含可空的 `title` 和 `cover_url`，生成响应、列表、详情统一解析。创建页提供可选标题（最多 200 个 Unicode 码点）、折叠的可选暂存封面（相册上传或 HTTP/HTTPS URL，最多 2048 个 Unicode 码点）和独立手动预览；首尾空白会去除，未填写时省略字段。当前后端未填标题时会从描述提取，成片封面由后端从实际视频提取并永久转存，可能替换暂存封面。客户端不自行截帧或生成成片封面；用户主动选择的暂存封面可上传，最终以任务返回值为准。标题和封面随同原请求保留到幂等重试中。非法输入在提交按钮附近显示提示，避免错误字段滚出屏幕后提示不可见。
 
 列表使用封面网格/大图切换、两行标题、状态标识、作品编号与创建时间；详情顶部显示完整标题，未完成任务展示封面，已完成影片在开始播放前展示封面，点击后才初始化播放器。对话实时视频卡片和历史卡片同步读取这两个字段。封面请求不携带应用 Bearer 令牌；仅接受无内嵌凭据的 HTTP/HTTPS URL。旧记录缺少标题时统一使用 `displayTitle` 的影片编号回退，缺少封面或图片加载失败时提供占位。
+
+详情页提供作品管理入口。编辑页标题最多 35 个 Unicode 码点，只有发生改变的字段才通过 `PATCH /videos/{record_id}` 提交；标题不能清空。更换封面沿用相册上传组件，先调用 `POST /files`，上传成功后用返回的 URL 回显并随 PATCH 保存。生成和封面转存均完成前只允许改标题；历史记录即使显示 `STORED`，如缺少后端封面对象标记仍可能得到 409，页面会提示稍后核对。删除从详情触发，二次确认明确提示不可在 App 中找回；成功后返回并刷新列表。后端仅逻辑删除记录，不取消正在运行的供应商任务，也不清除对象存储文件。删除结果不明时先查详情，不自动重复 DELETE。视频详情和列表以服务端新值为准；旧的结构化聊天消息仍保留发送时的快照。
 
 后端公开任务返回模型名称与可空首尾帧图片地址；未返回完整提示词、时长、画幅、音轨或改写配置，列表/详情不伪造这些字段。历史缺少模型时不推断成某个默认模型。
 

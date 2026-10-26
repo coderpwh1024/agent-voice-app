@@ -174,6 +174,7 @@ class VideoImageAttachment extends ChangeNotifier {
       }
       uploaded = result;
       url.text = result.url;
+      previewUri = VideoReference.imageUri(result.url);
     } catch (e) {
       if (!_disposed) error = fileUploadError(e);
     }

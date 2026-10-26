@@ -86,6 +86,24 @@ class VideoApi {
     return VideoTask.fromJson(await _request('GET', '/videos/$id'));
   }
 
+  Future<VideoTask> updateMetadata(int id, VideoMetadataUpdate update) async {
+    if (id < 1) throw const ApiException(422, '作品编号无效');
+    if (update.validationError case final error?) {
+      throw ApiException(422, error);
+    }
+    return VideoTask.fromJson(
+      await _request('PATCH', '/videos/$id', body: update.toJson()),
+    );
+  }
+
+  Future<void> delete(int id) async {
+    if (id < 1) throw const ApiException(422, '作品编号无效');
+    final result = await _request('DELETE', '/videos/$id');
+    if (result['deleted'] != true) {
+      throw const ApiException(502, '删除结果无法确认，请刷新作品列表核对');
+    }
+  }
+
   void close() {
     if (_ownsClient) _client.close();
   }

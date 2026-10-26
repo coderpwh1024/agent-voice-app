@@ -6,6 +6,7 @@ import 'package:agent_voice_app/features/videos/data/video_api.dart';
 import 'package:agent_voice_app/features/videos/data/video_models.dart';
 import 'package:agent_voice_app/features/videos/video_create_page.dart';
 import 'package:agent_voice_app/features/videos/video_detail_page.dart';
+import 'package:agent_voice_app/features/videos/video_edit_page.dart';
 import 'package:agent_voice_app/features/videos/video_studio_page.dart';
 import 'package:agent_voice_app/features/videos/video_widgets.dart';
 import 'package:flutter/material.dart';
@@ -35,6 +36,9 @@ class FakeVideoApi extends VideoApi {
   Object createFailure = const ApiException(504, 'timeout');
   bool failMore = false;
   String? title, coverUrl;
+  VideoTask? detailTask;
+  final updates = <VideoMetadataUpdate>[];
+  int deletes = 0;
   @override
   Future<VideoTaskPage> list({
     int page = 1,
@@ -55,7 +59,22 @@ class FakeVideoApi extends VideoApi {
 
   @override
   Future<VideoTask> detail(int id) async =>
-      task(id, title: title, coverUrl: coverUrl);
+      detailTask ?? task(id, title: title, coverUrl: coverUrl);
+  @override
+  Future<VideoTask> updateMetadata(int id, VideoMetadataUpdate update) async {
+    updates.add(update);
+    return task(
+      id,
+      title: update.title ?? title,
+      coverUrl: update.coverUrl ?? coverUrl,
+    );
+  }
+
+  @override
+  Future<void> delete(int id) async {
+    deletes++;
+  }
+
   @override
   Future<VideoTask> create(VideoDraft draft, String key) async {
     keys.add(key);
@@ -281,6 +300,87 @@ void main() {
     expect(api.keys, isEmpty);
     expect(find.text('请输入有效的 HTTP/HTTPS 封面地址'), findsOneWidget);
   });
+  testWidgets('detail deletion requires confirmation and explains permanence', (
+    tester,
+  ) async {
+    final api = FakeVideoApi()..title = '湖畔来信';
+    addTearDown(api.close);
+    await tester.pumpWidget(
+      wrap(VideoDetailPage(config: config, recordId: 1, api: api)),
+    );
+    await tester.pumpAndSettle();
+    await tap(tester, find.byKey(const Key('video-delete-open')));
+    expect(find.text('删除这部影片？'), findsOneWidget);
+    expect(find.textContaining('无法在 App 中找回'), findsOneWidget);
+    await tester.tap(find.text('保留影片'));
+    await tester.pumpAndSettle();
+    expect(api.deletes, 0);
+    await tap(tester, find.byKey(const Key('video-delete-open')));
+    await tester.tap(find.byKey(const Key('video-delete-confirm')));
+    await tester.pumpAndSettle();
+    expect(api.deletes, 1);
+  });
+
+  testWidgets('edit page limits title to 35 and saves only changed metadata', (
+    tester,
+  ) async {
+    final api = FakeVideoApi();
+    addTearDown(api.close);
+    await tester.pumpWidget(
+      wrap(
+        VideoEditPage(
+          config: config,
+          task: task(1, title: '旧标题'),
+          api: api,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('才能更换封面', skipOffstage: false), findsOneWidget);
+    await tester.enterText(find.byKey(const Key('video-edit-title')), '新' * 36);
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('video-edit-title')))
+          .controller!
+          .text
+          .runes
+          .length,
+      35,
+    );
+    await tap(tester, find.byKey(const Key('video-edit-save')));
+    expect(api.updates.single.toJson(), {'title': '新' * 35});
+  });
+
+  testWidgets('long legacy title does not block a cover-only edit', (
+    tester,
+  ) async {
+    final api = FakeVideoApi();
+    addTearDown(api.close);
+    final old = VideoTask(
+      id: 7,
+      status: 'SUCCEEDED',
+      storageStatus: 'STORED',
+      title: '旧' * 69,
+      createdAt: DateTime.utc(2026, 10, 22),
+      updatedAt: DateTime.utc(2026, 10, 22),
+    );
+    await tester.pumpWidget(
+      wrap(VideoEditPage(config: config, task: old, api: api)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('原标题 69 字'), findsOneWidget);
+    await openVideoImageAddress(tester, 'video-edit-cover');
+    await tester.enterText(
+      find.byKey(const Key('video-edit-cover')),
+      'https://cdn.example/new.jpg',
+    );
+    await tap(tester, find.byKey(const Key('video-edit-save')));
+    expect(api.updates.single.toJson(), {
+      'cover_url': 'https://cdn.example/new.jpg',
+    });
+  });
+
   for (final dark in [false, true]) {
     testWidgets('small screen and large text dark=$dark', (tester) async {
       tester.view.physicalSize = const Size(320, 700);
@@ -293,11 +393,27 @@ void main() {
         VideoStudioPage(config: config, api: api),
         VideoCreatePage(config: config, api: api),
         VideoDetailPage(config: config, recordId: 1, api: api),
+        VideoEditPage(
+          config: config,
+          task: task(1, title: '旧标题'),
+          api: api,
+        ),
       ]) {
         await tester.pumpWidget(wrap(page, dark: dark, scale: 2));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
       }
+      await tester.pumpWidget(
+        wrap(
+          VideoDetailPage(config: config, recordId: 1, api: api),
+          dark: dark,
+          scale: 2,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tap(tester, find.byKey(const Key('video-delete-open')));
+      expect(find.text('删除这部影片？'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
   }
 }
