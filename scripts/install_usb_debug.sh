@@ -48,6 +48,10 @@ if [[ -z "$device_id" ]]; then
 fi
 
 base_url="http://127.0.0.1:$backend_port"
+if ! curl --fail --silent --show-error --max-time 5 "$base_url/health" >/dev/null; then
+  echo "Local backend is unavailable at $base_url/health. Start the backend before installing the USB build." >&2
+  exit 1
+fi
 apk_path="$project_dir/build/app/outputs/flutter-apk/app-debug.apk"
 project_build_number=$(sed -n 's/^version: .*+\([0-9][0-9]*\).*/\1/p' "$project_dir/pubspec.yaml" | head -1)
 installed_build_number=$(
