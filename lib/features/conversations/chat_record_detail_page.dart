@@ -1,3 +1,5 @@
+import '../execution/execution_progress.dart';
+
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
@@ -285,6 +287,8 @@ class _MessageBubble extends StatelessWidget {
             childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             expandedCrossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (!human && message.execution != null)
+                ExecutionProgress(execution: message.execution!),
               MessageContentView(
                 text: content,
                 baseUrl: config.baseUrl,
@@ -332,6 +336,8 @@ class _MessageBubble extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 6),
+              if (!human && message.execution != null)
+                ExecutionProgress(execution: message.execution!),
               MessageContentView(
                 text: content,
                 baseUrl: config.baseUrl,

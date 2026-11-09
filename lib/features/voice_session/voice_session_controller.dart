@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/api_models.dart';
+import '../../core/api/execution_models.dart';
 import '../../core/api/video_reference.dart';
 import '../../core/api/voice_protocol.dart';
 import '../../core/api/voice_socket.dart';
@@ -24,12 +25,15 @@ enum VoiceConnectionState {
   speaking,
 }
 
+enum DictationState { idle, recording, transcribing }
+
 class ConversationEntry {
   const ConversationEntry({
     required this.role,
     required this.text,
     this.responseId,
     this.memoryStatus,
+    this.execution,
     this.video,
     this.videoResults,
     this.isStreaming = false,
@@ -39,12 +43,14 @@ class ConversationEntry {
   final String text;
   final String? responseId;
   final MemoryStatus? memoryStatus;
+  final ExecutionSnapshot? execution;
   final VideoReference? video;
   final VideoResultPage? videoResults;
   final bool isStreaming;
 
   ConversationEntry copyWith({
     String? text,
+    ExecutionSnapshot? execution,
     VideoReference? video,
     VideoResultPage? videoResults,
     bool? isStreaming,
@@ -53,6 +59,7 @@ class ConversationEntry {
     text: text ?? this.text,
     responseId: responseId,
     memoryStatus: memoryStatus,
+    execution: execution ?? this.execution,
     video: video ?? this.video,
     videoResults: videoResults ?? this.videoResults,
     isStreaming: isStreaming ?? this.isStreaming,
@@ -102,6 +109,217 @@ class VoiceSessionController extends ChangeNotifier {
   final List<ConversationEntry> _messages = <ConversationEntry>[];
   ApprovalPrompt? _approval;
   bool _disposed = false;
+  Timer? _backgroundTimer;
+  bool _backgroundActive = true;
+  bool _refreshing = false;
+  bool _refreshAgain = false;
+  int _recoveryEpoch = 0;
+  String? _recoveryThread, _recoveryAgent;
+  final Map<int, int> _videoPolls = {};
+  final Set<String> _submittedConfirmations = {};
+  String? executionRefreshError;
+  int _refreshFailures = 0;
+
+  bool canConfirmMemory(String? id) {
+    final latest = _messages.reversed
+        .map((item) => item.execution)
+        .whereType<ExecutionSnapshot>()
+        .firstOrNull;
+    return isConnected &&
+        id != null &&
+        latest?.confirmation?.id == id &&
+        !latest!.confirmation!.expired &&
+        !_submittedConfirmations.contains(id);
+  }
+
+  void setBackgroundActive(bool active) {
+    _backgroundActive = active;
+    _backgroundTimer?.cancel();
+    if (active) unawaited(refreshExecutionState());
+  }
+
+  void submitMemoryConfirmation(String id, bool approved) {
+    if (!isConnected || !_submittedConfirmations.add(id)) return;
+    final latest = _messages.reversed
+        .map((item) => item.execution)
+        .whereType<ExecutionSnapshot>()
+        .firstOrNull;
+    if (latest?.confirmation?.id != id || latest!.confirmation!.expired) {
+      _submittedConfirmations.remove(id);
+      return;
+    }
+    _socket!.sendJson(
+      clientEvent('memory.confirm', {
+        'confirmation_id': id,
+        'approved': approved,
+      }),
+    );
+    _setState(VoiceConnectionState.thinking);
+  }
+
+  void _mergeExecution(
+    ExecutionSnapshot execution, {
+    String? responseId,
+    bool recovering = false,
+  }) {
+    final id = responseId ?? execution.responseId;
+    final index = _messages.indexWhere(
+      (item) =>
+          item.execution?.runId == execution.runId ||
+          (id != null && item.responseId == id),
+    );
+    final existing = index >= 0 ? _messages[index] : null;
+    if (existing?.execution != null &&
+        existing!.execution!.sequence > execution.sequence) {
+      return;
+    }
+    final video = VideoReference.tryParse(execution.video);
+    final results = VideoResultPage.tryParse(execution.video);
+    if (index >= 0) {
+      if (id != null) _assistantIndexes[id] = index;
+      _messages[index] = existing!.copyWith(
+        execution: execution,
+        text: recovering && !existing.isStreaming && execution.text.isNotEmpty
+            ? execution.text
+            : null,
+        video: existing.video == null ? video : null,
+        videoResults: existing.videoResults == null ? results : null,
+        isStreaming: existing.isStreaming,
+      );
+    } else {
+      final target = _messages.length;
+      _messages.add(
+        ConversationEntry(
+          role: 'ai',
+          text: recovering ? execution.text : '',
+          responseId: id,
+          execution: execution,
+          video: video,
+          videoResults: results,
+        ),
+      );
+      if (id != null) _assistantIndexes[id] = target;
+    }
+  }
+
+  void _scheduleBackgroundRefresh() {
+    _backgroundTimer?.cancel();
+    if (_disposed || !_backgroundActive || _recoveryThread == null) return;
+    final pending = _messages.any(
+      (item) =>
+          item.execution?.isRunning == true ||
+          (item.execution?.confirmation != null &&
+              !item.execution!.confirmation!.expired) ||
+          (item.video != null &&
+              item.video!.shouldPoll &&
+              (_videoPolls[item.video!.recordId] ?? 0) < 120) ||
+          item.videoResults?.items.any(
+                (video) =>
+                    video.shouldPoll &&
+                    (_videoPolls[video.recordId] ?? 0) < 120,
+              ) ==
+              true,
+    );
+    if (pending || (executionRefreshError != null && _refreshFailures < 6)) {
+      _backgroundTimer = Timer(
+        const Duration(seconds: 10),
+        () => unawaited(refreshExecutionState()),
+      );
+    }
+  }
+
+  Future<void> refreshExecutionState({bool reset = false}) async {
+    if (reset) {
+      _videoPolls.clear();
+      _refreshFailures = 0;
+    }
+    final thread = _recoveryThread,
+        agent = _recoveryAgent,
+        epoch = _recoveryEpoch;
+    if (_refreshing) {
+      _refreshAgain = true;
+      return;
+    }
+    if (_disposed || !_backgroundActive || thread == null || agent == null) {
+      return;
+    }
+    _refreshing = true;
+    try {
+      try {
+        final snapshots = await _api.executions(agent, thread);
+        if (_disposed || !_backgroundActive || epoch != _recoveryEpoch) return;
+        for (final snapshot in snapshots) {
+          _mergeExecution(snapshot, recovering: true);
+        }
+        executionRefreshError = null;
+        _refreshFailures = 0;
+      } catch (_) {
+        if (_disposed || !_backgroundActive || epoch != _recoveryEpoch) return;
+        _refreshFailures++;
+        executionRefreshError = '执行状态暂未同步，可稍后刷新核实';
+      }
+      final videos = <int, VideoReference>{};
+      for (final item in _messages) {
+        if (item.video case final video?) videos[video.recordId] = video;
+        for (final video in item.videoResults?.items ?? <VideoReference>[]) {
+          videos[video.recordId] = video;
+        }
+      }
+      for (final video
+          in videos.values.where((video) => video.shouldPoll).take(50)) {
+        if ((_videoPolls[video.recordId] ?? 0) >= 120) continue;
+        _videoPolls[video.recordId] = (_videoPolls[video.recordId] ?? 0) + 1;
+        try {
+          final data = await _api
+              .requestJson('GET', '/videos/${video.recordId}')
+              .timeout(const Duration(seconds: 20));
+          if (_disposed || !_backgroundActive || epoch != _recoveryEpoch) {
+            return;
+          }
+          final updated = VideoReference.tryParse({
+            ...data,
+            'record_id': data['id'],
+          });
+          if (updated == null) continue;
+          for (var index = 0; index < _messages.length; index++) {
+            final item = _messages[index];
+            final page = item.videoResults;
+            _messages[index] = item.copyWith(
+              video: item.video?.recordId == updated.recordId ? updated : null,
+              videoResults: page == null
+                  ? null
+                  : VideoResultPage(
+                      items: page.items
+                          .map(
+                            (item) => item.recordId == updated.recordId
+                                ? updated
+                                : item,
+                          )
+                          .toList(),
+                      total: page.total,
+                      page: page.page,
+                      totalPages: page.totalPages,
+                    ),
+            );
+          }
+        } catch (_) {
+          if (_disposed || !_backgroundActive || epoch != _recoveryEpoch) {
+            return;
+          }
+        }
+      }
+      if (!_disposed) notifyListeners();
+    } finally {
+      _refreshing = false;
+      if (_refreshAgain && !_disposed && _backgroundActive) {
+        _refreshAgain = false;
+        unawaited(refreshExecutionState());
+      } else {
+        _scheduleBackgroundRefresh();
+      }
+    }
+  }
+
   bool _wakeArmed = false;
   bool _wakeTriggered = false;
   bool _acceptLiveAudio = false;
@@ -120,8 +338,20 @@ class VoiceSessionController extends ChangeNotifier {
   Timer? _speechHintResumeTimer;
   String? _pausedHintResponseId;
   bool _tearingDown = false;
+  int _wakeSetupEpoch = 0;
   bool _wakeConfirmationPending = false;
   String? _pendingWakeTranscript;
+  String _inputMode = 'conversation';
+  DictationState _dictationState = DictationState.idle;
+  String _dictationText = '';
+  Completer<String>? _dictationCompleter;
+
+  String get inputMode => _inputMode;
+  DictationState get dictationState => _dictationState;
+  bool get isDictating => _dictationState != DictationState.idle;
+  VoiceConnectionState get idleState => _inputMode == 'text'
+      ? VoiceConnectionState.ready
+      : VoiceConnectionState.listening;
 
   AppConfig get config => _config;
   VoiceConnectionState get state => _state;
@@ -143,6 +373,11 @@ class VoiceSessionController extends ChangeNotifier {
   void updateConfig(AppConfig config) {
     if (isConnected || _wakeArmed) {
       throw StateError('请先断开当前语音会话');
+    }
+    _recoveryEpoch++;
+    _backgroundTimer?.cancel();
+    if (config.userId != _config.userId || config.baseUrl != _config.baseUrl) {
+      clearConversation();
     }
     _api.close();
     _config = config;
@@ -203,17 +438,61 @@ class VoiceSessionController extends ChangeNotifier {
     required String agentId,
     required String voice,
     String? threadId,
+    String inputMode = 'conversation',
   }) async {
-    if (_state != VoiceConnectionState.disconnected &&
-        _state != VoiceConnectionState.wakeListening) {
-      return;
+    if (_state == VoiceConnectionState.connecting || _tearingDown) return;
+    if (isConnected && _inputMode == inputMode) return;
+    final selectedThread = threadId ?? _session?.threadId ?? _recoveryThread;
+    if (inputMode != 'conversation' || isConnected) {
+      await disableWakeWord();
+      if (isConnected) await disconnect();
     }
     await _connect(
       agentId: agentId,
       voice: voice,
-      threadId: threadId,
+      threadId: selectedThread,
       wakeActivation: false,
+      inputMode: inputMode,
     );
+  }
+
+  Future<void> startDictation({
+    required String agentId,
+    required String voice,
+    String? threadId,
+  }) async {
+    if (isDictating) return;
+    _dictationText = '';
+    await connect(
+      agentId: agentId,
+      voice: voice,
+      threadId: threadId,
+      inputMode: 'transcription',
+    );
+    if (isConnected && _inputMode == 'transcription') {
+      _dictationState = DictationState.recording;
+      notifyListeners();
+    }
+  }
+
+  Future<String> finishDictation() async {
+    if (_dictationState != DictationState.recording || !isConnected) return '';
+    _dictationState = DictationState.transcribing;
+    _dictationCompleter = Completer<String>();
+    _acceptLiveAudio = false;
+    notifyListeners();
+    try {
+      await _audio.stop();
+      _socket!.sendJson(clientEvent('input.commit'));
+      return await _dictationCompleter!.future.timeout(
+        const Duration(seconds: 20),
+      );
+    } catch (error) {
+      _recordError(error is TimeoutException ? '转写超时，请重试或直接输入文字' : error);
+      rethrow;
+    } finally {
+      await disconnect();
+    }
   }
 
   Future<void> enableWakeWord({
@@ -224,15 +503,18 @@ class VoiceSessionController extends ChangeNotifier {
     if (isConnected) {
       throw StateError('请先结束当前语音会话');
     }
+    final setupEpoch = ++_wakeSetupEpoch;
     _ensureConfigured();
     if (_capabilities == null) {
       await loadCapabilities();
     }
+    if (setupEpoch != _wakeSetupEpoch || _disposed) return;
     final wake = _capabilities!.wakeWord;
     if (!wake.enabled) {
       throw StateError('后端未启用唤醒词能力');
     }
     final granted = await _audio.requestMicrophonePermission();
+    if (setupEpoch != _wakeSetupEpoch || _disposed) return;
     if (!granted) {
       throw StateError('没有麦克风权限，无法启用唤醒词');
     }
@@ -243,6 +525,7 @@ class VoiceSessionController extends ChangeNotifier {
         threshold: wake.threshold,
       ),
     );
+    if (setupEpoch != _wakeSetupEpoch || _disposed) return;
     _wakeSubscription ??= _wakeWordDetector.detections.listen(
       _onWakeDetected,
       onError: _recordError,
@@ -255,10 +538,12 @@ class VoiceSessionController extends ChangeNotifier {
     _wakeTriggered = false;
     _ensureAudioSubscriptions();
     _processingState = await _audio.start(AudioCaptureMode.standby);
+    if (setupEpoch != _wakeSetupEpoch || _disposed) return;
     _setState(VoiceConnectionState.wakeListening);
   }
 
   Future<void> disableWakeWord() async {
+    _wakeSetupEpoch++;
     final hadWakeAudio = _wakeArmed || _microphoneSubscription != null;
     _wakeArmed = false;
     _wakeTriggered = false;
@@ -317,6 +602,7 @@ class VoiceSessionController extends ChangeNotifier {
     required String voice,
     required String? threadId,
     required bool wakeActivation,
+    String inputMode = 'conversation',
   }) async {
     _ensureConfigured();
     _setState(VoiceConnectionState.connecting);
@@ -328,10 +614,15 @@ class VoiceSessionController extends ChangeNotifier {
       if (selectedVoice == null) {
         throw const ApiException(503, '当前语音模型没有可用音色');
       }
-      final granted = await _audio.requestMicrophonePermission();
-      if (!granted) {
-        throw StateError('没有麦克风权限，无法启动实时语音');
+      if (inputMode != 'conversation' &&
+          !_capabilities!.inputModes.contains(inputMode)) {
+        throw const ApiException(503, '当前后端不支持文字或听写模式，请更新服务');
       }
+      if (inputMode != 'text') {
+        final granted = await _audio.requestMicrophonePermission();
+        if (!granted) throw StateError('没有麦克风权限，请允许录音或直接输入文字');
+      }
+      _inputMode = inputMode;
       _session = await _api.createVoiceSession(
         agentId: agentId,
         voice: selectedVoice,
@@ -340,7 +631,15 @@ class VoiceSessionController extends ChangeNotifier {
         wakeWord: wakeActivation ? _capabilities!.wakeWord.keyword : null,
         wakeEngine: wakeActivation ? 'sherpa-onnx-1.13.8' : null,
         preRollSamples: wakeActivation ? _wakePreRollSamples : null,
+        inputMode: inputMode,
       );
+      if (_recoveryThread != _session!.threadId) {
+        _recoveryEpoch++;
+        _videoPolls.clear();
+      }
+      _recoveryThread = _session!.threadId;
+      _recoveryAgent = _session!.agentId;
+      _submittedConfirmations.clear();
       _wakeConfirmationPending = wakeActivation;
       final socket = await VoiceSocket.connect(
         _api.websocketUri(_session!.sessionId),
@@ -366,16 +665,21 @@ class VoiceSessionController extends ChangeNotifier {
         }),
       );
       await _readyCompleter!.future.timeout(const Duration(seconds: 12));
-      _processingState = await _audio.start(AudioCaptureMode.conversation);
+      if (threadId != null) unawaited(refreshExecutionState());
+      _processingState = await _audio.start(
+        inputMode == 'text'
+            ? AudioCaptureMode.playback
+            : AudioCaptureMode.conversation,
+      );
       _metrics.reset();
-      _acceptLiveAudio = true;
+      _acceptLiveAudio = inputMode != 'text';
       if (wakeActivation) {
         for (final frame in _pendingWakeAudio) {
           _sendPcm(frame);
         }
         _pendingWakeAudio.clear();
       }
-      _setState(VoiceConnectionState.listening);
+      _setState(idleState);
     } catch (error) {
       _recordError(error);
       await _teardown(sendClose: false);
@@ -414,13 +718,21 @@ class VoiceSessionController extends ChangeNotifier {
     final voice = previous.voice;
     final threadId = previous.threadId;
     await _teardown(sendClose: false, preserveSession: true);
-    await connect(agentId: agentId, voice: voice, threadId: threadId);
+    await connect(
+      agentId: agentId,
+      voice: voice,
+      threadId: threadId,
+      inputMode: previous.inputMode,
+    );
   }
 
   void sendText(String text) {
     final normalized = text.trim();
-    if (!isConnected || normalized.isEmpty) {
+    if (!isConnected || normalized.isEmpty || _inputMode == 'transcription') {
       return;
+    }
+    if (normalized.runes.length > 6000) {
+      throw ArgumentError('消息最多 6000 个字符，请缩短后发送');
     }
     _messages.add(ConversationEntry(role: 'human', text: normalized));
     _socket!.sendJson(
@@ -443,7 +755,7 @@ class VoiceSessionController extends ChangeNotifier {
         'response_id': responseId,
       }),
     );
-    _setState(VoiceConnectionState.listening);
+    _setState(idleState);
   }
 
   Future<void> speechHint({bool pausePlayback = true}) async {
@@ -501,6 +813,15 @@ class VoiceSessionController extends ChangeNotifier {
     if (isConnected) {
       throw StateError('请先结束当前语音会话');
     }
+    _recoveryEpoch++;
+    _backgroundTimer?.cancel();
+    _recoveryThread = null;
+    _recoveryAgent = null;
+    _videoPolls.clear();
+    _submittedConfirmations.clear();
+    executionRefreshError = null;
+    _refreshFailures = 0;
+    _refreshAgain = false;
     _messages.clear();
     _assistantIndexes.clear();
     _invalidResponses.clear();
@@ -512,7 +833,13 @@ class VoiceSessionController extends ChangeNotifier {
   }
 
   Future<void> loadHistory(String agentId, String threadId) async {
+    final epoch = ++_recoveryEpoch;
     final history = await _api.history(agentId, threadId);
+    if (_disposed || !_backgroundActive || epoch != _recoveryEpoch) return;
+    _assistantIndexes.clear();
+    _submittedConfirmations.clear();
+    _recoveryThread = threadId;
+    _recoveryAgent = agentId;
     _messages
       ..clear()
       ..addAll(
@@ -521,12 +848,15 @@ class VoiceSessionController extends ChangeNotifier {
             role: item.role,
             text: item.content,
             memoryStatus: item.memoryStatus,
+            responseId: item.execution?.responseId,
+            execution: item.execution,
             video: item.video,
             videoResults: item.videoResults,
           ),
         ),
       );
     notifyListeners();
+    await refreshExecutionState();
   }
 
   Future<void> _handleEvent(Map<String, dynamic> event) async {
@@ -551,13 +881,29 @@ class VoiceSessionController extends ChangeNotifier {
         _setState(VoiceConnectionState.ready);
       case 'input.started':
         if (_currentResponseId == null) {
-          _setState(VoiceConnectionState.listening);
+          _setState(idleState);
         }
       case 'transcript.partial':
+        if (_inputMode == 'transcription') {
+          _partialTranscript =
+              _dictationText + (event['text'] as String? ?? '');
+          notifyListeners();
+          break;
+        }
         final text = event['text'] as String? ?? '';
         _partialTranscript = _isNonActionableVoiceText(text) ? '' : text;
         notifyListeners();
       case 'transcript.final':
+        if (_inputMode == 'transcription') {
+          _dictationText += event['text'] as String? ?? '';
+          _partialTranscript = _dictationText;
+          final completion = _dictationCompleter;
+          if (completion != null && !completion.isCompleted) {
+            completion.complete(_dictationText.trim());
+          }
+          notifyListeners();
+          break;
+        }
         final rawText = event['text'] as String? ?? '';
         final text = _isNonActionableVoiceText(rawText) ? '' : rawText;
         _partialTranscript = '';
@@ -571,7 +917,7 @@ class VoiceSessionController extends ChangeNotifier {
         if (text.trim().isEmpty) {
           _setState(
             _currentResponseId == null
-                ? VoiceConnectionState.listening
+                ? idleState
                 : _responseHasAudio
                 ? VoiceConnectionState.speaking
                 : VoiceConnectionState.thinking,
@@ -624,6 +970,13 @@ class VoiceSessionController extends ChangeNotifier {
         if (responseId == null || data is! Map) {
           break;
         }
+        final execution = ExecutionSnapshot.tryParse(data);
+        if (execution != null) {
+          _mergeExecution(execution, responseId: responseId);
+          notifyListeners();
+          _scheduleBackgroundRefresh();
+          break;
+        }
         final video = data['type'] == 'video.task'
             ? VideoReference.tryParse(data['video'])
             : null;
@@ -648,6 +1001,7 @@ class VoiceSessionController extends ChangeNotifier {
           );
         }
         notifyListeners();
+        _scheduleBackgroundRefresh();
       case 'audio.segment.done':
         if (responseId != null) {
           await _audio.completeSegment(
@@ -668,8 +1022,9 @@ class VoiceSessionController extends ChangeNotifier {
         }
         _speechHintPending = false;
         _speechFrames = 0;
-        _setState(VoiceConnectionState.listening);
+        _setState(idleState);
       case 'response.done':
+        _scheduleBackgroundRefresh();
         if (responseId != null) _finishMessage(responseId);
         final serverLatency = event['latency_ms'];
         if (serverLatency is Map) {
@@ -679,6 +1034,10 @@ class VoiceSessionController extends ChangeNotifier {
                   .toInt();
             }
           }
+        }
+        if (responseId == _currentResponseId && !_responseHasAudio) {
+          _currentResponseId = null;
+          _setState(idleState);
         }
         final shouldDrain =
             responseId != null &&
@@ -690,7 +1049,7 @@ class VoiceSessionController extends ChangeNotifier {
           if (_currentResponseId == responseId) {
             _currentResponseId = null;
           }
-          _setState(VoiceConnectionState.listening);
+          _setState(idleState);
         }
       case 'playback.resume':
         if (responseId != null && !_invalidResponses.contains(responseId)) {
@@ -719,7 +1078,7 @@ class VoiceSessionController extends ChangeNotifier {
         _wakeConfirmationPending = false;
         _wakeTriggered = false;
         _partialTranscript = '';
-        _setState(VoiceConnectionState.listening);
+        _setState(idleState);
       case 'wake.rejected':
         _pendingWakeTranscript = null;
         _wakeConfirmationPending = false;
@@ -732,14 +1091,19 @@ class VoiceSessionController extends ChangeNotifier {
         );
         notifyListeners();
       case 'error':
-        _recordError(
-          event['code'] == 'tts_failed'
-              ? '本轮语音合成未完成，文字已保留，请重试'
-              : event['code']?.toString() ?? '未知语音错误',
-        );
+        final dictation = _dictationCompleter;
+        if (dictation != null && !dictation.isCompleted) {
+          dictation.completeError(StateError('语音转写失败，请重试或直接输入文字'));
+        }
+        _recordError(switch (event['code']) {
+          'tts_failed' => '本轮语音合成未完成，文字已保留，请重试',
+          'agent_failed' => '本次回答未能完成，已保留你的输入，请检查服务后重试',
+          'asr_failed' => '语音转写失败，请重试或直接输入文字',
+          _ => event['code']?.toString() ?? '未知语音错误',
+        });
       case 'session.closed':
       case 'socket.closed':
-        unawaited(_teardown(sendClose: false));
+        unawaited(_teardown(sendClose: false, preserveSession: true));
     }
   }
 
@@ -917,7 +1281,7 @@ class VoiceSessionController extends ChangeNotifier {
           _clearSpeechHintPause();
           _speechHintPending = false;
           _speechFrames = 0;
-          _setState(VoiceConnectionState.listening);
+          _setState(idleState);
         }
     }
   }
@@ -928,6 +1292,12 @@ class VoiceSessionController extends ChangeNotifier {
   }) async {
     if (_tearingDown) return;
     _tearingDown = true;
+    final dictation = _dictationCompleter;
+    _dictationCompleter = null;
+    if (dictation != null && !dictation.isCompleted) {
+      dictation.completeError(StateError('语音转写已中断，请重试'));
+    }
+    _dictationState = DictationState.idle;
     _clearSpeechHintPause();
     try {
       for (final responseId in _assistantIndexes.keys) {
@@ -1010,6 +1380,8 @@ class VoiceSessionController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _backgroundTimer?.cancel();
+    _recoveryEpoch++;
     _wakeArmed = false;
     unawaited(_teardown(sendClose: true));
     unawaited(_wakeSubscription?.cancel());

@@ -11,6 +11,7 @@ import '../../core/api/video_reference.dart';
 import '../../core/config/app_config.dart';
 import '../../core/audio/audio_bridge.dart';
 import '../conversations/personal_library_page.dart';
+import '../execution/execution_progress.dart';
 import '../conversations/chat_record_widgets.dart';
 import '../profile/profile_avatar.dart';
 import '../videos/video_studio_page.dart';
@@ -43,6 +44,8 @@ class _VoiceHomePageState extends State<VoiceHomePage>
   String? _voice;
   String? _threadId;
   bool _enablingDefaultWake = false;
+  bool _sendingText = false;
+  bool _changingInput = false;
   bool _defaultWakeAttempted = false;
   bool _browsingHistory = false;
   bool _followingLatest = true;
@@ -79,10 +82,14 @@ class _VoiceHomePageState extends State<VoiceHomePage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    widget.controller.setBackgroundActive(state == AppLifecycleState.resumed);
     if (state == AppLifecycleState.resumed) {
       _defaultWakeAttempted = false;
       _scheduleDefaultWake();
       return;
+    }
+    if (state != AppLifecycleState.resumed && widget.controller.isDictating) {
+      unawaited(widget.controller.disconnect());
     }
     if ((state == AppLifecycleState.paused ||
             state == AppLifecycleState.hidden ||
@@ -448,6 +455,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
               agentId: previous.agentId,
               voice: previous.voice,
               threadId: previous.threadId,
+              inputMode: previous.inputMode,
             );
           } catch (_) {
             // The controller displays connection errors and retains the conversation.
@@ -543,14 +551,76 @@ class _VoiceHomePageState extends State<VoiceHomePage>
     _scheduleDefaultWake();
   }
 
-  void _sendText() {
-    if (!widget.controller.isConnected || _text.text.trim().isEmpty) {
+  Future<void> _sendText() async {
+    final controller = widget.controller;
+    final value = _text.text.trim();
+    if (value.isEmpty || _sendingText || controller.isDictating) return;
+    if (value.runes.length > 6000) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('消息最多 6000 个字符，请缩短后发送')));
       return;
     }
-    _followingLatest = true;
-    final value = _text.text;
-    _text.clear();
-    widget.controller.sendText(value);
+    setState(() => _sendingText = true);
+    try {
+      if (!controller.isConnected) {
+        if (_selectedAgent == null || _selectedVoice == null) {
+          await controller.loadCapabilities();
+        }
+        final agent = _selectedAgent;
+        final voice = _selectedVoice;
+        if (agent == null || voice == null) return;
+        await controller.connect(
+          agentId: agent.id,
+          voice: voice,
+          threadId: _threadId,
+          inputMode: 'text',
+        );
+      }
+      if (!controller.isConnected || !mounted) return;
+      _followingLatest = true;
+      controller.sendText(value);
+      if (_text.text.trim() == value) _text.clear();
+    } catch (_) {
+      // The draft remains available when connecting or sending fails.
+    } finally {
+      if (mounted) setState(() => _sendingText = false);
+    }
+  }
+
+  Future<void> _toggleDictation() async {
+    if (_changingInput || _sendingText) return;
+    final controller = widget.controller;
+    setState(() => _changingInput = true);
+    try {
+      if (controller.dictationState == DictationState.recording) {
+        final transcript = await controller.finishDictation();
+        if (!mounted) return;
+        if (transcript.isEmpty) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text('没有识别到文字，请再试一次')));
+        } else {
+          final separator = _text.text.trim().isEmpty ? '' : '\n';
+          _text.text += '$separator$transcript';
+          _text.selection = TextSelection.collapsed(offset: _text.text.length);
+        }
+      } else {
+        if (_selectedAgent == null || _selectedVoice == null) {
+          await controller.loadCapabilities();
+        }
+        final agent = _selectedAgent;
+        final voice = _selectedVoice;
+        if (agent == null || voice == null) return;
+        await controller.startDictation(
+          agentId: agent.id,
+          voice: voice,
+          threadId: _threadId,
+        );
+      }
+    } catch (_) {
+      // The controller exposes transcription and permission errors.
+    } finally {
+      if (mounted) setState(() => _changingInput = false);
+    }
   }
 
   @override
@@ -566,6 +636,13 @@ class _VoiceHomePageState extends State<VoiceHomePage>
         MediaQuery.viewInsetsOf(context).bottom;
     final status = controller.isWakeActivating
         ? (connected ? '听到了，正在确认' : '听到了，正在连接')
+        : controller.dictationState == DictationState.recording
+        ? '正在听写，完成后可编辑发送'
+        : controller.dictationState == DictationState.transcribing
+        ? '正在转换文字'
+        : controller.inputMode == 'text' &&
+              controller.state == VoiceConnectionState.ready
+        ? '文字对话已就绪'
         : _statusLabel(controller.state, capabilities);
     final color = _statusColor(context, controller.state);
     return Scaffold(
@@ -816,6 +893,24 @@ class _VoiceHomePageState extends State<VoiceHomePage>
                                               config: controller.config,
                                               onOpenVideo:
                                                   _openConversationVideo,
+                                              onConfirm:
+                                                  controller.canConfirmMemory(
+                                                    messages[index]
+                                                        .execution
+                                                        ?.confirmation
+                                                        ?.id,
+                                                  )
+                                                  ? controller
+                                                        .submitMemoryConfirmation
+                                                  : null,
+                                              onRefresh: () => unawaited(
+                                                controller
+                                                    .refreshExecutionState(
+                                                      reset: true,
+                                                    ),
+                                              ),
+                                              refreshError: controller
+                                                  .executionRefreshError,
                                             ),
                                       ),
                                     ),
@@ -901,15 +996,20 @@ class _VoiceHomePageState extends State<VoiceHomePage>
                   ),
                 _VoiceControls(
                   state: controller.state,
-                  connected: connected,
+                  connected: connected && controller.inputMode != 'text',
                   status: status,
+                  modeLabel: controller.isDictating
+                      ? '语音转文字'
+                      : connected && controller.inputMode == 'text'
+                      ? '文字对话 · 回答会自动播报'
+                      : null,
                   compact: keyboardOpen,
                   voiceName: capabilities
                       ?.voiceOption(_selectedVoice)
                       ?.displayName,
                   onPressed: controller.state == VoiceConnectionState.connecting
                       ? null
-                      : connected
+                      : connected && controller.inputMode != 'text'
                       ? controller.disconnect
                       : !controller.config.isComplete
                       ? _openSettings
@@ -922,9 +1022,24 @@ class _VoiceHomePageState extends State<VoiceHomePage>
                 _Composer(
                   controller: _text,
                   maxLines: keyboardOpen ? (availableHeight < 420 ? 1 : 2) : 4,
-                  enabled: connected,
+                  enabled:
+                      controller.config.isComplete &&
+                      !_sendingText &&
+                      !controller.isDictating &&
+                      controller.state != VoiceConnectionState.connecting,
                   canInterrupt:
-                      connected && controller.currentResponseId != null,
+                      connected &&
+                      controller.inputMode == 'conversation' &&
+                      controller.currentResponseId != null,
+                  dictationState: controller.dictationState,
+                  canDictate:
+                      controller.config.isComplete &&
+                      !_changingInput &&
+                      !_sendingText &&
+                      controller.state != VoiceConnectionState.connecting &&
+                      (capabilities?.inputModes.contains('transcription') ??
+                          false),
+                  onDictate: _toggleDictation,
                   isSpeaking: controller.state == VoiceConnectionState.speaking,
                   onSend: _sendText,
                   onStop: controller.cancelCurrent,
@@ -1019,7 +1134,9 @@ class _VoiceControls extends StatelessWidget {
     required this.onPressed,
     required this.configured,
     required this.available,
+    this.modeLabel,
   });
+  final String? modeLabel;
   final VoiceConnectionState state;
   final bool connected;
   final String status;
@@ -1069,14 +1186,18 @@ class _VoiceControls extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                connected ? status : '语音陪伴',
+                modeLabel ?? (connected ? status : '语音陪伴'),
                 style: theme.textTheme.labelLarge?.copyWith(
                   fontWeight: FontWeight.w500,
                 ),
               ),
               const SizedBox(height: 3),
               Text(
-                connected ? voiceName ?? '正在对话中' : '喊“小美，小美”，我在这里',
+                modeLabel != null
+                    ? status
+                    : connected
+                    ? voiceName ?? '正在对话中'
+                    : '喊“小美，小美”，我在这里',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.labelSmall?.copyWith(
@@ -1544,9 +1665,15 @@ class _MessageBubble extends StatelessWidget {
     required this.entry,
     required this.config,
     required this.onOpenVideo,
+    this.onConfirm,
+    this.onRefresh,
+    this.refreshError,
   });
 
   final ConversationEntry entry;
+  final void Function(String, bool)? onConfirm;
+  final VoidCallback? onRefresh;
+  final String? refreshError;
   final AppConfig config;
   final Future<void> Function(VideoReference video, bool play) onOpenVideo;
 
@@ -1580,6 +1707,13 @@ class _MessageBubble extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (!human && entry.execution != null)
+                ExecutionProgress(
+                  execution: entry.execution!,
+                  onConfirm: onConfirm,
+                  onRefresh: onRefresh,
+                  refreshError: refreshError,
+                ),
               MessageContentView(
                 text: entry.text.isEmpty
                     ? (entry.video == null && entry.videoResults == null
@@ -1670,8 +1804,14 @@ class _Composer extends StatelessWidget {
     required this.onSend,
     required this.onStop,
     required this.onSpeechHint,
+    required this.dictationState,
+    required this.canDictate,
+    required this.onDictate,
   });
 
+  final DictationState dictationState;
+  final bool canDictate;
+  final VoidCallback onDictate;
   final TextEditingController controller;
   final int maxLines;
   final bool enabled;
@@ -1697,6 +1837,22 @@ class _Composer extends StatelessWidget {
           ),
           child: Row(
             children: [
+              IconButton(
+                tooltip: dictationState == DictationState.recording
+                    ? '完成转写'
+                    : dictationState == DictationState.transcribing
+                    ? '正在转换文字'
+                    : '语音转文字',
+                onPressed: canDictate ? onDictate : null,
+                icon: Icon(
+                  dictationState == DictationState.recording
+                      ? Icons.stop_circle_outlined
+                      : Icons.mic_none_rounded,
+                ),
+                color: dictationState == DictationState.recording
+                    ? Theme.of(context).colorScheme.error
+                    : AppPalette(context).ink,
+              ),
               if (canInterrupt) ...[
                 IconButton.outlined(
                   tooltip: '我要插话',
@@ -1747,23 +1903,22 @@ class _Composer extends StatelessWidget {
                     foregroundColor: Theme.of(context).colorScheme.onError,
                   ),
                   icon: const Icon(Icons.stop_rounded),
-                )
-              else
-                ValueListenableBuilder<TextEditingValue>(
-                  valueListenable: controller,
-                  builder: (context, value, _) => IconButton.filled(
-                    tooltip: '发送文字',
-                    onPressed: enabled && value.text.trim().isNotEmpty
-                        ? onSend
-                        : null,
-                    iconSize: 20,
-                    style: IconButton.styleFrom(
-                      backgroundColor: AppPalette(context).ink,
-                      foregroundColor: AppPalette(context).background,
-                    ),
-                    icon: const Icon(Icons.arrow_upward_rounded),
-                  ),
                 ),
+              ValueListenableBuilder<TextEditingValue>(
+                valueListenable: controller,
+                builder: (context, value, _) => IconButton.filled(
+                  tooltip: '发送文字',
+                  onPressed: enabled && value.text.trim().isNotEmpty
+                      ? onSend
+                      : null,
+                  iconSize: 20,
+                  style: IconButton.styleFrom(
+                    backgroundColor: AppPalette(context).ink,
+                    foregroundColor: AppPalette(context).background,
+                  ),
+                  icon: const Icon(Icons.arrow_upward_rounded),
+                ),
+              ),
             ],
           ),
         ),

@@ -9,6 +9,7 @@ final class IOSVoiceAudioEngine: NSObject {
   private var playbackSink: FlutterEventSink?
   private var running = false
   private var conversationMode = false
+  private var captureMode = "standby"
   private var voiceProcessingEnabled = false
   private var invalidResponses = Set<String>()
   private var pendingBuffers: [SegmentKey: Int] = [:]
@@ -47,8 +48,7 @@ final class IOSVoiceAudioEngine: NSObject {
         ).first else { throw AudioError.supportDirectoryUnavailable }
         result(directory.path)
       case "start":
-        let conversation = arguments?["mode"] as? String != "standby"
-        result(try start(conversation: conversation))
+        result(try start(mode: arguments?["mode"] as? String ?? "conversation"))
       case "enqueuePlayback":
         guard
           let bytes = (arguments?["pcm"] as? FlutterStandardTypedData)?.data,
@@ -109,22 +109,28 @@ final class IOSVoiceAudioEngine: NSObject {
     }
   }
 
-  private func start(conversation: Bool) throws -> [String: Any] {
-    if running && conversationMode == conversation { return processingState() }
+  private func start(mode: String) throws -> [String: Any] {
+    let conversation = mode != "standby"
+    let capture = mode != "playback"
+    if running && captureMode == mode { return processingState() }
     if running { stop() }
-    guard AVAudioSession.sharedInstance().recordPermission == .granted else {
+    guard !capture || AVAudioSession.sharedInstance().recordPermission == .granted else {
       throw AudioError.permissionDenied
     }
     let session = AVAudioSession.sharedInstance()
     let options: AVAudioSession.CategoryOptions = conversation
       ? [.defaultToSpeaker, .allowBluetoothHFP]
       : [.allowBluetoothHFP]
-    try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
+    if capture {
+      try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
+    } else {
+      try session.setCategory(.playback, mode: .default)
+    }
     try session.setPreferredIOBufferDuration(0.02)
     try session.setActive(true, options: .notifyOthersOnDeactivation)
 
-    let input = engine.inputNode
-    if #available(iOS 13.0, *) {
+    if capture, #available(iOS 13.0, *) {
+      let input = engine.inputNode
       try input.setVoiceProcessingEnabled(true)
       voiceProcessingEnabled = input.isVoiceProcessingEnabled
     }
@@ -141,20 +147,23 @@ final class IOSVoiceAudioEngine: NSObject {
       engine.connect(player, to: engine.mainMixerNode, format: outputFormat)
     }
 
-    let inputFormat = input.outputFormat(forBus: 0)
-    guard inputFormat.sampleRate > 0,
-      let captureFormat = AVAudioFormat(
-        commonFormat: .pcmFormatInt16,
-        sampleRate: 16_000,
-        channels: 1,
-        interleaved: true
-      ),
-      let converter = AVAudioConverter(from: inputFormat, to: captureFormat)
-    else { throw AudioError.formatUnavailable }
+    if capture {
+      let input = engine.inputNode
+      let inputFormat = input.outputFormat(forBus: 0)
+      guard inputFormat.sampleRate > 0,
+        let captureFormat = AVAudioFormat(
+          commonFormat: .pcmFormatInt16,
+          sampleRate: 16_000,
+          channels: 1,
+          interleaved: true
+        ),
+        let converter = AVAudioConverter(from: inputFormat, to: captureFormat)
+      else { throw AudioError.formatUnavailable }
 
-    input.installTap(onBus: 0, bufferSize: 1_920, format: inputFormat) {
-      [weak self] buffer, _ in
-      self?.convertCapture(buffer, converter: converter, outputFormat: captureFormat)
+      input.installTap(onBus: 0, bufferSize: 1_920, format: inputFormat) {
+        [weak self] buffer, _ in
+        self?.convertCapture(buffer, converter: converter, outputFormat: captureFormat)
+      }
     }
     engine.prepare()
     try engine.start()
@@ -166,13 +175,14 @@ final class IOSVoiceAudioEngine: NSObject {
       completedResponses.removeAll()
       running = true
       conversationMode = conversation
+      captureMode = mode
     }
     return processingState()
   }
 
   private func processingState() -> [String: Any] {
     [
-      "mode": conversationMode ? "conversation" : "standby",
+      "mode": captureMode,
       "aecAvailable": true,
       "aecEnabled": voiceProcessingEnabled && conversationMode,
       "noiseSuppressionAvailable": true,
@@ -314,7 +324,7 @@ final class IOSVoiceAudioEngine: NSObject {
       return value
     }
     guard wasRunning else { return }
-    engine.inputNode.removeTap(onBus: 0)
+    if captureMode != "playback" { engine.inputNode.removeTap(onBus: 0) }
     player.stop()
     engine.stop()
     engine.reset()

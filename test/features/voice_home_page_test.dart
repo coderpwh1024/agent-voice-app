@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:agent_voice_app/core/api/api_models.dart';
 import 'package:agent_voice_app/core/config/app_config.dart';
+import 'package:agent_voice_app/core/theme/app_theme.dart';
 import 'package:agent_voice_app/features/voice_session/voice_home_page.dart';
 import 'package:agent_voice_app/features/voice_session/voice_session_controller.dart';
 import 'package:flutter/material.dart';
@@ -27,6 +28,7 @@ class ChatPreviewController extends VoiceSessionController {
   VoiceCapabilities get capabilities => VoiceCapabilities.fromJson({
     'enabled': true,
     'protocol_version': 1,
+    'input_modes': ['conversation', 'text', 'transcription'],
     'voices': ['Cherry', 'Serena'],
     'agents': [
       {'id': 'chatbot', 'speech_mode': 'streaming', 'cancel_execution': true},
@@ -74,12 +76,90 @@ class ChatPreviewController extends VoiceSessionController {
   }
 }
 
+class ComposerPreviewController extends ChatPreviewController {
+  String mode = 'conversation';
+  DictationState dictation = DictationState.idle;
+  final sent = <String>[];
+
+  @override
+  String get inputMode => mode;
+  @override
+  DictationState get dictationState => dictation;
+  @override
+  bool get isDictating => dictation != DictationState.idle;
+
+  @override
+  Future<void> connect({
+    required String agentId,
+    required String voice,
+    String? threadId,
+    String inputMode = 'conversation',
+  }) async {
+    mode = inputMode;
+    connected = true;
+    previewState = VoiceConnectionState.ready;
+    redraw();
+  }
+
+  @override
+  void sendText(String text) {
+    sent.add(text);
+    redraw();
+  }
+
+  @override
+  Future<void> startDictation({
+    required String agentId,
+    required String voice,
+    String? threadId,
+  }) async {
+    mode = 'transcription';
+    connected = true;
+    dictation = DictationState.recording;
+    redraw();
+  }
+
+  @override
+  Future<String> finishDictation() async {
+    dictation = DictationState.idle;
+    connected = false;
+    redraw();
+    return '语音转换的文字';
+  }
+}
+
+ThemeData inputPreviewTheme(Brightness brightness) {
+  final theme = AppTheme.build(
+    brightness,
+    baseTheme: ThemeData(
+      brightness: brightness,
+      fontFamily: previewDirectory.isEmpty ? null : 'ChatPreview',
+    ),
+  );
+  if (previewDirectory.isEmpty) return theme;
+  return theme.copyWith(
+    appBarTheme: theme.appBarTheme.copyWith(
+      titleTextStyle: theme.appBarTheme.titleTextStyle?.copyWith(
+        fontFamily: 'ChatPreview',
+      ),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: theme.filledButtonTheme.style?.copyWith(
+        textStyle: WidgetStatePropertyAll(
+          theme.textTheme.labelLarge?.copyWith(fontFamily: 'ChatPreview'),
+        ),
+      ),
+    ),
+  );
+}
+
 Future<void> mountChat(
   WidgetTester tester,
   ChatPreviewController controller, {
   Size size = const Size(390, 844),
   double textScale = 1,
   Brightness brightness = Brightness.light,
+  bool useAppTheme = false,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -87,25 +167,29 @@ Future<void> mountChat(
   addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(
     MaterialApp(
-      theme: ThemeData(
-        colorSchemeSeed: const Color(0xffd87568),
-        brightness: brightness,
-        fontFamily: previewDirectory.isEmpty ? null : 'ChatPreview',
-        appBarTheme: AppBarTheme(
-          backgroundColor: brightness == Brightness.dark
-              ? const Color(0xff171412)
-              : const Color(0xfffbf8f4),
-          surfaceTintColor: Colors.transparent,
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-          filled: true,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 15,
-          ),
-        ),
-      ),
+      theme: useAppTheme
+          ? inputPreviewTheme(brightness)
+          : ThemeData(
+              colorSchemeSeed: const Color(0xffd87568),
+              brightness: brightness,
+              fontFamily: previewDirectory.isEmpty ? null : 'ChatPreview',
+              appBarTheme: AppBarTheme(
+                backgroundColor: brightness == Brightness.dark
+                    ? const Color(0xff171412)
+                    : const Color(0xfffbf8f4),
+                surfaceTintColor: Colors.transparent,
+              ),
+              inputDecorationTheme: InputDecorationTheme(
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                filled: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 15,
+                ),
+              ),
+            ),
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context)
             .copyWith(textScaler: TextScaler.linear(textScale)),
@@ -126,6 +210,21 @@ Future<void> mountChat(
   });
 }
 
+Future<void> captureInputPreview(WidgetTester tester, String name) async {
+  if (previewDirectory.isEmpty) return;
+  await tester.runAsync(() async {
+    final boundary = tester.renderObject<RenderRepaintBoundary>(
+      find.byKey(previewKey),
+    );
+    final image = await boundary.toImage(pixelRatio: 2);
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    await Directory(previewDirectory).create(recursive: true);
+    await File('$previewDirectory/$name.png')
+        .writeAsBytes(bytes!.buffer.asUint8List());
+    image.dispose();
+  });
+}
+
 void main() {
   setUp(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -143,6 +242,15 @@ void main() {
               .then((bytes) => ByteData.sublistView(bytes)),
         );
       await loader.load();
+      for (final family in ['Roboto', 'Ahem']) {
+        final fallback = FontLoader(family)
+          ..addFont(
+            File(const String.fromEnvironment('CHAT_PREVIEW_FONT'))
+                .readAsBytes()
+                .then((bytes) => ByteData.sublistView(bytes)),
+          );
+        await fallback.load();
+      }
       final icons = FontLoader('MaterialIcons')
         ..addFont(
           File(const String.fromEnvironment('CHAT_PREVIEW_ICON_FONT'))
@@ -265,6 +373,58 @@ void main() {
     },
   );
 
+  testWidgets('typing starts text mode without first starting voice', (
+    tester,
+  ) async {
+    final controller = ComposerPreviewController();
+    await mountChat(tester, controller, useAppTheme: true);
+    await tester.enterText(find.byType(TextField), '直接发送文字');
+    await tester.pump();
+    await tester.tap(find.byTooltip('发送文字'));
+    await tester.pumpAndSettle();
+    expect(controller.mode, 'text');
+    expect(controller.sent, ['直接发送文字']);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      isEmpty,
+    );
+    expect(find.text('文字对话 · 回答会自动播报'), findsOneWidget);
+    await captureInputPreview(tester, 'text-ready');
+  });
+
+  testWidgets(
+    'dictation fills an editable draft and never sends automatically',
+    (tester) async {
+      final controller = ComposerPreviewController();
+      await mountChat(tester, controller, useAppTheme: true);
+      await tester.enterText(find.byType(TextField), '已有草稿');
+      await tester.tap(find.byTooltip('语音转文字'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('完成转写'), findsOneWidget);
+      await captureInputPreview(tester, 'dictation-recording');
+      final send = tester.widget<IconButton>(
+        find.byWidgetPredicate(
+          (widget) => widget is IconButton && widget.tooltip == '发送文字',
+        ),
+      );
+      expect(send.onPressed, isNull);
+      await tester.tap(find.byTooltip('完成转写'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        '已有草稿\n语音转换的文字',
+      );
+      expect(controller.sent, isEmpty);
+      await captureInputPreview(tester, 'dictation-draft');
+      await tester.enterText(find.byType(TextField), '编辑后的文字');
+      await tester.tap(find.byTooltip('发送文字'));
+      await tester.pumpAndSettle();
+      expect(controller.sent, ['编辑后的文字']);
+      expect(controller.mode, 'text');
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('composer exposes actions only when they can be used', (
     tester,
   ) async {
@@ -295,7 +455,7 @@ void main() {
     await tester.pump();
     expect(find.byTooltip('我要插话'), findsOneWidget);
     expect(find.byTooltip('立即停止回答'), findsOneWidget);
-    expect(find.byTooltip('发送文字'), findsNothing);
+    expect(find.byTooltip('发送文字'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

@@ -1,3 +1,4 @@
+import 'execution_models.dart';
 import 'video_reference.dart';
 
 class EmailCodeAccepted {
@@ -133,6 +134,7 @@ class VoiceCapabilities {
     this.voiceCatalogModel,
     this.inputFormat = 'pcm16_16000_mono',
     this.outputFormat = 'pcm16_24000_mono',
+    this.inputModes = const ['conversation'],
   });
 
   factory VoiceCapabilities.fromJson(Map<String, dynamic> json) {
@@ -186,6 +188,10 @@ class VoiceCapabilities {
       voiceCatalogModel: json['voice_catalog_model'] as String?,
       inputFormat: json['input_format'] as String? ?? 'pcm16_16000_mono',
       outputFormat: json['output_format'] as String? ?? 'pcm16_24000_mono',
+      inputModes:
+          (json['input_modes'] as List<dynamic>? ?? const ['conversation'])
+              .whereType<String>()
+              .toList(growable: false),
     );
   }
 
@@ -203,6 +209,7 @@ class VoiceCapabilities {
   final String? voiceCatalogModel;
   final String inputFormat;
   final String outputFormat;
+  final List<String> inputModes;
 
   String? selectVoice(String? selectedId) =>
       voices.contains(selectedId) ? selectedId : defaultVoice;
@@ -295,6 +302,7 @@ class VoiceSession {
     required this.expiresAt,
     this.activation = 'tap',
     this.wakeStatus = 'not_required',
+    this.inputMode = 'conversation',
   });
 
   factory VoiceSession.fromJson(Map<String, dynamic> json) => VoiceSession(
@@ -305,6 +313,7 @@ class VoiceSession {
     expiresAt: DateTime.parse(json['expires_at'] as String),
     activation: json['activation'] as String? ?? 'tap',
     wakeStatus: json['wake_status'] as String? ?? 'not_required',
+    inputMode: json['input_mode'] as String? ?? 'conversation',
   );
 
   final String sessionId;
@@ -314,6 +323,7 @@ class VoiceSession {
   final DateTime expiresAt;
   final String activation;
   final String wakeStatus;
+  final String inputMode;
 }
 
 enum MemoryStatus {
@@ -345,6 +355,7 @@ class ChatItem {
     required this.role,
     required this.content,
     this.runId,
+    this.execution,
     this.toolNames = const [],
     this.memoryStatus,
     this.video,
@@ -355,6 +366,11 @@ class ChatItem {
     role: json['type'] as String? ?? 'custom',
     content: json['content'] as String? ?? '',
     runId: json['run_id'] as String?,
+    execution: ExecutionSnapshot.tryParse(
+      json['response_metadata'] is Map
+          ? (json['response_metadata'] as Map)['execution']
+          : null,
+    ),
     toolNames: (json['tool_calls'] as List<dynamic>? ?? const [])
         .whereType<Map>()
         .map((item) => item['name']?.toString() ?? '')
@@ -380,6 +396,7 @@ class ChatItem {
   final String role;
   final String content;
   final String? runId;
+  final ExecutionSnapshot? execution;
   final List<String> toolNames;
   final MemoryStatus? memoryStatus;
   final VideoReference? video;

@@ -30,6 +30,7 @@ class CapabilitiesController extends VoiceSessionController {
     required String agentId,
     required String voice,
     String? threadId,
+    String inputMode = 'conversation',
   }) async {
     activeSession = VoiceSession(
       sessionId: 'test-session',

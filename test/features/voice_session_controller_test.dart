@@ -154,6 +154,17 @@ void main() {
   test('restoring history preserves the backend memory result', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((request) async {
+      if (request.uri.path.endsWith('/executions')) {
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(
+          jsonEncode({
+            'code': 200,
+            'data': {'executions': []},
+          }),
+        );
+        await request.response.close();
+        return;
+      }
       expect(request.uri.path, '/mem0-chatbot/history');
       expect(
         request.headers.value(HttpHeaders.authorizationHeader),

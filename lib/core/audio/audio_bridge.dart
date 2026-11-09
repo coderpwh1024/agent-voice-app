@@ -23,7 +23,7 @@ abstract interface class AudioBridge {
   Future<void> stop();
 }
 
-enum AudioCaptureMode { standby, conversation }
+enum AudioCaptureMode { standby, conversation, playback }
 
 class AudioProcessingState {
   const AudioProcessingState({
@@ -37,9 +37,10 @@ class AudioProcessingState {
   factory AudioProcessingState.fromJson(Map<dynamic, dynamic>? json) {
     final value = json ?? const <Object?, Object?>{};
     return AudioProcessingState(
-      mode: value['mode'] == 'standby'
-          ? AudioCaptureMode.standby
-          : AudioCaptureMode.conversation,
+      mode: AudioCaptureMode.values.firstWhere(
+        (mode) => mode.name == value['mode'],
+        orElse: () => AudioCaptureMode.conversation,
+      ),
       aecAvailable: value['aecAvailable'] as bool? ?? false,
       aecEnabled: value['aecEnabled'] as bool? ?? false,
       noiseSuppressionAvailable:

@@ -154,11 +154,11 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler {
                 "requestMicrophonePermission" -> requestMicrophonePermission(result)
                 "applicationSupportDirectory" -> result.success(filesDir.absolutePath)
                 "start" -> {
-                    if (!hasMicrophonePermission()) {
+                    val mode = call.argument<String>("mode") ?: "conversation"
+                    if (mode != "playback" && !hasMicrophonePermission()) {
                         result.error("microphone_permission", "Microphone permission is required", null)
                     } else {
-                        val conversation = call.argument<String>("mode") != "standby"
-                        result.success(audio.start(conversation))
+                        result.success(audio.start(mode))
                     }
                 }
                 "enqueuePlayback" -> {
@@ -285,13 +285,16 @@ private class VoiceAudioEngine(
     private var previousSpeakerphoneOn: Boolean? = null
     private var previousCommunicationDevice: AudioDeviceInfo? = null
     private var conversationMode = false
+    private var captureMode = "standby"
 
-    fun start(conversation: Boolean): Map<String, Any> {
-        if (running.get() && conversationMode == conversation) return processingState()
+    fun start(mode: String): Map<String, Any> {
+        val conversation = mode != "standby"
+        if (running.get() && captureMode == mode) return processingState()
         if (running.get()) stop()
         if (!running.compareAndSet(false, true)) return processingState()
         try {
             conversationMode = conversation
+            captureMode = mode
             paused.set(false)
             invalidResponses.clear()
             commands.clear()
@@ -303,7 +306,7 @@ private class VoiceAudioEngine(
                 configureAudioRoute()
                 startPlayback()
             }
-            startCapture()
+            if (mode != "playback") startCapture()
             if (conversation) startMonitor()
         } catch (error: Exception) {
             stop()
@@ -313,7 +316,7 @@ private class VoiceAudioEngine(
     }
 
     private fun processingState(): Map<String, Any> = mapOf(
-        "mode" to if (conversationMode) "conversation" else "standby",
+        "mode" to captureMode,
         "aecAvailable" to AcousticEchoCanceler.isAvailable(),
         "aecEnabled" to (aec?.enabled == true),
         "noiseSuppressionAvailable" to NoiseSuppressor.isAvailable(),

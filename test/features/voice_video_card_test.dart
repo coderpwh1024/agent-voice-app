@@ -57,6 +57,7 @@ class MediaChatController extends ChatPreviewController {
     required String agentId,
     required String voice,
     String? threadId,
+    String inputMode = 'conversation',
   }) async {
     operations.add('voice-resumed:$agentId:$voice:$threadId');
     connected = true;

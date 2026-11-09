@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import '../config/app_config.dart';
 import 'api_models.dart';
+import 'execution_models.dart';
 import 'chat_record_models.dart';
 import 'memory_models.dart';
 
@@ -208,6 +209,7 @@ class AgentApiClient {
     required String voice,
     String? threadId,
     String activation = 'tap',
+    String inputMode = 'conversation',
     String? wakeWord,
     String? wakeEngine,
     int? preRollSamples,
@@ -216,9 +218,10 @@ class AgentApiClient {
       'agent_id': agentId,
       'voice': voice,
       'language': 'zh',
-      'turn_detection': 'server_vad',
+      'turn_detection': inputMode == 'transcription' ? 'manual' : 'server_vad',
       'activation': activation,
     };
+    if (inputMode != 'conversation') body['input_mode'] = inputMode;
     if (threadId != null) {
       body['thread_id'] = threadId;
     }
@@ -259,6 +262,26 @@ class AgentApiClient {
     return (json['messages'] as List<dynamic>? ?? const [])
         .map((item) => ChatItem.fromJson(item as Map<String, dynamic>))
         .toList(growable: false);
+  }
+
+  Future<List<ExecutionSnapshot>> executions(
+    String agentId,
+    String threadId,
+  ) async {
+    final json = await _request(
+      'GET',
+      '/${Uri.encodeComponent(agentId)}/executions',
+      query: {
+        'thread_id': threadId,
+        if (config.userId.trim().isNotEmpty) 'user_id': config.userId.trim(),
+      },
+    ).timeout(const Duration(seconds: 20));
+    final rows = json['executions'];
+    if (rows is! List) throw const ApiException(502, '执行状态格式无效');
+    return rows
+        .map(ExecutionSnapshot.tryParse)
+        .whereType<ExecutionSnapshot>()
+        .toList();
   }
 
   Future<List<ChatRecordDay>> chatRecords(String agentId) async {
