@@ -99,7 +99,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('记忆与对话'), findsOneWidget);
     expect(find.text('长期记忆'), findsOneWidget);
-    await tester.ensureVisible(find.text('历史对话'));
+    await tester.scrollUntilVisible(
+      find.text('历史对话'),
+      200,
+      scrollable: find.byType(Scrollable).last,
+    );
     await tester.pump();
     await tester.tap(find.text('历史对话'));
     await tester.pump();

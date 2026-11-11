@@ -4,6 +4,8 @@
 
 ## 当前能力
 
+- 本机 Markdown 记忆：兼容后端默认使用手机 `MEMORY.md`，支持分类、来源、候选确认、编辑、遗忘、开关及导入导出；Mem0 原功能保留为备选，详见[本机记忆说明](docs/Local_Memory.md)
+
 - 视频工作室：独立生成、分页作品列表、编号查询、状态同步与影片播放，详见 [视频模块说明](docs/Video_Studio.md)
 - 读取 `/voice/capabilities`，选择 Agent 与服务端配置的音色，并展示音色名称与描述
 - 邮箱验证码登录与自动注册，接入 `/auth/email/code`、`/auth/email/verify`

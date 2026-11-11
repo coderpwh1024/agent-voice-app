@@ -14,6 +14,7 @@ import '../../core/audio/audio_bridge.dart';
 import '../../core/audio/wake_phrase.dart';
 import '../../core/audio/wake_word_detector.dart';
 import '../../core/config/app_config.dart';
+import '../../core/memory/local_memory_store.dart';
 
 enum VoiceConnectionState {
   disconnected,
@@ -119,6 +120,31 @@ class VoiceSessionController extends ChangeNotifier {
   final Set<String> _submittedConfirmations = {};
   String? executionRefreshError;
   int _refreshFailures = 0;
+  LocalMemoryStore? _localMemory;
+  String? localMemoryNotice;
+  bool _usingLocalMemory = false;
+  String? get localMemorySummary => !_usingLocalMemory || _localMemory == null
+      ? null
+      : '本机记忆 ${_localMemory!.entries.length} 条 · 待确认 ${_localMemory!.pending.length} 项 · 待整理 ${_localMemory!.queued} 项';
+
+  void _memoryChanged() {
+    if (!_disposed) notifyListeners();
+  }
+
+  Future<void> _prepareLocalMemory() async {
+    if (_capabilities?.localMemory != true || _config.userId.isEmpty) {
+      _usingLocalMemory = false;
+      localMemoryNotice = '当前后端未提供本机记忆协议，本次使用原有服务端记忆；升级后端后可使用本机 MD';
+      return;
+    }
+    final store = LocalMemoryStore.forConfig(_config);
+    await store.load();
+    _localMemory?.removeListener(_memoryChanged);
+    _localMemory = store;
+    store.addListener(_memoryChanged);
+    _usingLocalMemory = store.mode == 'local';
+    if (_usingLocalMemory) unawaited(store.process(_api.extractLocalMemories));
+  }
 
   bool canConfirmMemory(String? id) {
     final latest = _messages.reversed
@@ -383,6 +409,10 @@ class VoiceSessionController extends ChangeNotifier {
     _config = config;
     _api = AgentApiClient(config);
     _capabilities = null;
+    _localMemory?.removeListener(_memoryChanged);
+    _localMemory = null;
+    _usingLocalMemory = false;
+    localMemoryNotice = null;
     _error = null;
     notifyListeners();
   }
@@ -623,6 +653,7 @@ class VoiceSessionController extends ChangeNotifier {
         if (!granted) throw StateError('没有麦克风权限，请允许录音或直接输入文字');
       }
       _inputMode = inputMode;
+      await _prepareLocalMemory();
       _session = await _api.createVoiceSession(
         agentId: agentId,
         voice: selectedVoice,
@@ -632,6 +663,9 @@ class VoiceSessionController extends ChangeNotifier {
         wakeEngine: wakeActivation ? 'sherpa-onnx-1.13.8' : null,
         preRollSamples: wakeActivation ? _wakePreRollSamples : null,
         inputMode: inputMode,
+        memoryMode: _capabilities!.localMemory
+            ? (_usingLocalMemory ? 'local' : 'mem0')
+            : null,
       );
       if (_recoveryThread != _session!.threadId) {
         _recoveryEpoch++;
@@ -874,6 +908,54 @@ class VoiceSessionController extends ChangeNotifier {
       return;
     }
     switch (type) {
+      case 'memory.context.request':
+        final socket = _socket;
+        if (!_usingLocalMemory || socket == null || responseId == null) break;
+        try {
+          final context = await _localMemory!.context(
+            event['text'] as String? ?? '',
+          );
+          if (socket != _socket) break;
+          socket.sendJson(
+            clientEvent('memory.context', {
+              'response_id': responseId,
+              'context': context,
+            }),
+          );
+        } catch (_) {
+          localMemoryNotice = '本机记忆暂不可读取，本轮不会使用 Mem0 替代';
+          if (socket == _socket) {
+            socket.sendJson(
+              clientEvent('memory.context', {
+                'response_id': responseId,
+                'context': <String, Object?>{},
+              }),
+            );
+          }
+          notifyListeners();
+        }
+      case 'memory.context.unavailable':
+        localMemoryNotice = '本轮未及时取得本机记忆，回答可能缺少个人上下文';
+        notifyListeners();
+      case 'input.accepted':
+        final store = _localMemory;
+        if (!_usingLocalMemory ||
+            store == null ||
+            event['duplicate'] == true ||
+            event['memory_eligible'] != true) {
+          break;
+        }
+        try {
+          await store.enqueue(
+            sourceId: event['turn_id'] as String,
+            text: event['text'] as String,
+            threadId: _session?.threadId,
+          );
+          unawaited(store.process(_api.extractLocalMemories));
+        } catch (_) {
+          localMemoryNotice = '本次记忆任务未保存，请到本机记忆页核对';
+          notifyListeners();
+        }
       case 'session.ready':
         _connectionId = event['connection_id'] as String;
         _inputSequence = 0;
@@ -1380,6 +1462,7 @@ class VoiceSessionController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _localMemory?.removeListener(_memoryChanged);
     _backgroundTimer?.cancel();
     _recoveryEpoch++;
     _wakeArmed = false;

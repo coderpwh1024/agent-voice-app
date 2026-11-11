@@ -210,6 +210,7 @@ class AgentApiClient {
     String? threadId,
     String activation = 'tap',
     String inputMode = 'conversation',
+    String? memoryMode,
     String? wakeWord,
     String? wakeEngine,
     int? preRollSamples,
@@ -222,6 +223,7 @@ class AgentApiClient {
       'activation': activation,
     };
     if (inputMode != 'conversation') body['input_mode'] = inputMode;
+    if (memoryMode != null) body['memory_mode'] = memoryMode;
     if (threadId != null) {
       body['thread_id'] = threadId;
     }
@@ -237,6 +239,16 @@ class AgentApiClient {
 
   Future<void> closeVoiceSession(String sessionId) async {
     await _request('DELETE', '/voice/sessions/$sessionId');
+  }
+
+  Future<Map<String, dynamic>> extractLocalMemories(Map<String, Object?> body) {
+    if (config.userId.trim().isEmpty) throw const ApiException(401, '请先登录');
+    return _request(
+      'POST',
+      '/local-memories/extract',
+      query: {'user_id': config.userId.trim()},
+      body: body,
+    ).timeout(const Duration(seconds: 30));
   }
 
   Future<List<ThreadSummary>> threads(String agentId) async {

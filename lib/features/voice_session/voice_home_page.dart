@@ -761,6 +761,37 @@ class _VoiceHomePageState extends State<VoiceHomePage>
                                 keyboardDismissBehavior:
                                     ScrollViewKeyboardDismissBehavior.onDrag,
                                 slivers: [
+                                  if (controller.localMemorySummary != null)
+                                    SliverToBoxAdapter(
+                                      child: Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          16,
+                                          8,
+                                          16,
+                                          0,
+                                        ),
+                                        child: Text(
+                                          controller.localMemorySummary!,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall,
+                                        ),
+                                      ),
+                                    ),
+                                  if (controller.localMemoryNotice != null)
+                                    SliverToBoxAdapter(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(16),
+                                        child: Text(
+                                          controller.localMemoryNotice!,
+                                          style: TextStyle(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .error,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                   if (controller.error != null)
                                     SliverToBoxAdapter(
                                       child: Padding(

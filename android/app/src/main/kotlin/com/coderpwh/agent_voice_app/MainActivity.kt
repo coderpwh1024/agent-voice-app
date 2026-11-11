@@ -51,6 +51,13 @@ class MainActivity : FlutterActivity(), MethodChannel.MethodCallHandler {
         super.configureFlutterEngine(flutterEngine)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
         MethodChannel(messenger, "agent_voice/audio").setMethodCallHandler(this)
+        MethodChannel(messenger, "agent_voice/local_memory").setMethodCallHandler { call, result ->
+            if (call.method == "directory") {
+                result.success(java.io.File(noBackupFilesDir, "memories").absolutePath)
+            } else {
+                result.notImplemented()
+            }
+        }
         MethodChannel(messenger, "agent_voice/secure_session").setMethodCallHandler { call, result ->
             try {
                 when (call.method) {

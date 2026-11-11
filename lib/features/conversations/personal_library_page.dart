@@ -4,6 +4,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/api_models.dart';
 import '../../core/config/app_config.dart';
 import '../memories/memories_page.dart';
+import '../memories/local_memories_page.dart';
 import '../videos/video_studio_page.dart';
 import 'chat_record_widgets.dart';
 import 'chat_records_page.dart';
@@ -66,6 +67,20 @@ class PersonalLibraryPage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 14),
+            _CollectionCard(
+              title: '本机记忆',
+              eyebrow: 'ON YOUR DEVICE',
+              description: 'Markdown 正文保存在手机。\n查看来源、确认候选，随时编辑与导出。',
+              tag: '首选 · 本机 MD',
+              icon: Icons.bookmark_border_rounded,
+              color: palette.blush,
+              onTap: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  builder: (_) => LocalMemoriesPage(config: config),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
             _CollectionCard(
               title: '长期记忆',
               eyebrow: 'MEMORY',

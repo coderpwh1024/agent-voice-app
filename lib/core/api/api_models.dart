@@ -135,6 +135,7 @@ class VoiceCapabilities {
     this.inputFormat = 'pcm16_16000_mono',
     this.outputFormat = 'pcm16_24000_mono',
     this.inputModes = const ['conversation'],
+    this.localMemory = false,
   });
 
   factory VoiceCapabilities.fromJson(Map<String, dynamic> json) {
@@ -192,10 +193,15 @@ class VoiceCapabilities {
           (json['input_modes'] as List<dynamic>? ?? const ['conversation'])
               .whereType<String>()
               .toList(growable: false),
+      localMemory:
+          json['local_memory'] is Map &&
+          (json['local_memory'] as Map)['enabled'] == true &&
+          (json['local_memory'] as Map)['version'] == 1,
     );
   }
 
   final bool enabled;
+  final bool localMemory;
   final int protocolVersion;
   final List<VoiceOption> voiceOptions;
   final String? defaultVoice;

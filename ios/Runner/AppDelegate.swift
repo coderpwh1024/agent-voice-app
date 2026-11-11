@@ -18,6 +18,31 @@ import UIKit
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     voiceAudio.register(with: engineBridge.applicationRegistrar.messenger())
     secureSession.register(with: engineBridge.applicationRegistrar.messenger())
+    FlutterMethodChannel(
+      name: "agent_voice/local_memory",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    ).setMethodCallHandler { call, result in
+      guard call.method == "directory" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      do {
+        var directory = try FileManager.default.url(
+          for: .applicationSupportDirectory, in: .userDomainMask,
+          appropriateFor: nil, create: true
+        ).appendingPathComponent("memories", isDirectory: true)
+        try FileManager.default.createDirectory(
+          at: directory, withIntermediateDirectories: true,
+          attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
+        )
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try directory.setResourceValues(values)
+        result(directory.path)
+      } catch {
+        result(FlutterError(code: "local_memory", message: "Storage unavailable", details: nil))
+      }
+    }
   }
 }
 
