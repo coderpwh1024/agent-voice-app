@@ -55,6 +55,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
   bool _followScheduled = false;
   bool _scrollingToStart = false;
   int _newMessageCount = 0;
+  late int _lastLocationNoticeSequence;
   late int _lastMessageCount;
   ConversationEntry? _lastEntry;
 
@@ -63,6 +64,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _lastMessageCount = widget.controller.messages.length;
+    _lastLocationNoticeSequence = widget.controller.locationNoticeSequence;
     _lastEntry = widget.controller.messages.lastOrNull;
     _scroll.addListener(_scrollChanged);
     widget.controller.addListener(_changed);
@@ -104,6 +106,19 @@ class _VoiceHomePageState extends State<VoiceHomePage>
   void _changed() {
     if (!mounted) {
       return;
+    }
+    final noticeSequence = widget.controller.locationNoticeSequence;
+    if (noticeSequence != _lastLocationNoticeSequence) {
+      _lastLocationNoticeSequence = noticeSequence;
+      final notice = widget.controller.locationNotice;
+      if (notice != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text(notice)));
+          }
+        });
+      }
     }
     final session = widget.controller.session;
     if (session != null &&
@@ -578,8 +593,8 @@ class _VoiceHomePageState extends State<VoiceHomePage>
       }
       if (!controller.isConnected || !mounted) return;
       _followingLatest = true;
-      controller.sendText(value);
-      if (_text.text.trim() == value) _text.clear();
+      final sent = await controller.sendUserTextWithLocation(value);
+      if (sent && mounted && _text.text.trim() == value) _text.clear();
     } catch (_) {
       // The draft remains available when connecting or sending fails.
     } finally {

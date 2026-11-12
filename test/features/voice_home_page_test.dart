@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:agent_voice_app/core/api/api_models.dart';
 import 'package:agent_voice_app/core/config/app_config.dart';
+import 'package:agent_voice_app/core/location/device_location.dart';
 import 'package:agent_voice_app/core/theme/app_theme.dart';
 import 'package:agent_voice_app/features/voice_session/voice_home_page.dart';
 import 'package:agent_voice_app/features/voice_session/voice_session_controller.dart';
@@ -102,9 +103,15 @@ class ComposerPreviewController extends ChatPreviewController {
   }
 
   @override
-  void sendText(String text) {
+  void sendText(String text, {DeviceLocation? deviceLocation}) {
     sent.add(text);
     redraw();
+  }
+
+  @override
+  Future<bool> sendUserTextWithLocation(String text) async {
+    sendText(text);
+    return true;
   }
 
   @override

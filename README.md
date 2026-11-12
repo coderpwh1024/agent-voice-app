@@ -102,6 +102,10 @@ BACKEND_PORT=8080 ./scripts/install_usb_debug.sh 20b2a515
 - iOS 模拟器可用 `http://127.0.0.1:8000`
 - 生产环境必须使用 HTTPS/WSS
 
+当你询问“我现在在哪”“附近有什么”或“从当前位置出发”时，App 才会请求前台位置权限，并获取一次当前位置。优先使用五分钟内的设备定位，否则最多等待 25 秒获取新位置。文字消息的 `input.text` 可携带 `device_location`（纬度、经度、米级精度和 UTC 获取时间）；语音识别出明确位置意图后，后端发送 `location.request`，App 以 `location.result` 回复。普通聊天和“王府井附近”这类指定地点的问题不会触发手机定位。拒绝权限、关闭定位服务或定位超时时，App 会显示具体提示，原问题仍会发送，回答可能需要你补充出发地。App 不持续跟踪，也不把坐标写入聊天消息。
+
+Android 使用前台粗略／精确位置权限；iOS 使用“使用 App 期间”权限。当前 iOS 工程使用 Swift Package Manager，构建 iOS 包时需设置 `BYPASS_PERMISSION_LOCATION_ALWAYS=1`，以保持仅前台定位权限。
+
 Android Manifest 当前允许明文 HTTP，仅用于本地开发。发布前应关闭 `android:usesCleartextTraffic`，并配置可信 HTTPS/WSS 域名。登录 Token 不写入普通偏好存储：iOS 使用 Keychain，Android 使用 Keystore 内的 AES-GCM 密钥加密后再持久化。退出登录会删除本地会话。
 
 ## 聊天记录

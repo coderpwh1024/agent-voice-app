@@ -40,6 +40,7 @@ dependencies:
   url_launcher: ^6.3.3
   flutter_markdown_plus: ^1.0.12
   markdown: ^7.3.1
+  geolocator: ^14.1.2
 
 dev_dependencies:
   integration_test:

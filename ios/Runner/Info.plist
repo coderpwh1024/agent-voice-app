@@ -28,6 +28,8 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>用于与 Agent 进行实时语音对话、插话和本地回声消除。</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>仅在你询问当前位置、附近地点或从当前位置出发时，获取一次位置用于回答。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>用于从相册中选择个人头像。</string>
 	<key>NSLocalNetworkUsageDescription</key>

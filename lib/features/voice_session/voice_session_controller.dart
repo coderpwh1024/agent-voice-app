@@ -14,6 +14,7 @@ import '../../core/audio/audio_bridge.dart';
 import '../../core/audio/wake_phrase.dart';
 import '../../core/audio/wake_word_detector.dart';
 import '../../core/config/app_config.dart';
+import '../../core/location/device_location.dart';
 import '../../core/memory/local_memory_store.dart';
 
 enum VoiceConnectionState {
@@ -79,9 +80,12 @@ class VoiceSessionController extends ChangeNotifier {
     AppConfig? config,
     AudioBridge? audio,
     WakeWordDetector? wakeWordDetector,
+    DeviceLocationProvider? locationProvider,
   }) : _config = config ?? AppConfig.defaults(),
        _audio = audio ?? NativeAudioBridge(),
-       _wakeWordDetector = wakeWordDetector ?? SherpaWakeWordDetector() {
+       _wakeWordDetector = wakeWordDetector ?? SherpaWakeWordDetector(),
+       _locationProvider =
+           locationProvider ?? const GeolocatorDeviceLocationProvider() {
     _api = AgentApiClient(_config);
   }
 
@@ -89,6 +93,7 @@ class VoiceSessionController extends ChangeNotifier {
   late AgentApiClient _api;
   final AudioBridge _audio;
   final WakeWordDetector _wakeWordDetector;
+  final DeviceLocationProvider _locationProvider;
   VoiceSocket? _socket;
   VoiceSession? _session;
   VoiceCapabilities? _capabilities;
@@ -104,6 +109,8 @@ class VoiceSessionController extends ChangeNotifier {
   final Map<String, int> _responseLatencyMs = <String, int>{};
   String _partialTranscript = '';
   String? _error;
+  String? _locationNotice;
+  int _locationNoticeSequence = 0;
   VoiceConnectionState _state = VoiceConnectionState.disconnected;
   final Set<String> _invalidResponses = <String>{};
   final Map<String, int> _assistantIndexes = <String, int>{};
@@ -391,6 +398,8 @@ class VoiceSessionController extends ChangeNotifier {
   List<ConversationEntry> get messages => List.unmodifiable(_messages);
   ApprovalPrompt? get approval => _approval;
   bool get isConnected => _connectionId != null && _socket != null;
+  String? get locationNotice => _locationNotice;
+  int get locationNoticeSequence => _locationNoticeSequence;
   bool get isWakeListening => _state == VoiceConnectionState.wakeListening;
   bool get wakeWordEnabled => _wakeArmed;
   bool get isWakeActivating => _wakeArmed && _wakeTriggered;
@@ -760,7 +769,37 @@ class VoiceSessionController extends ChangeNotifier {
     );
   }
 
-  void sendText(String text) {
+  Future<bool> sendUserTextWithLocation(String text) async {
+    final normalized = text.trim();
+    if (!isConnected || normalized.isEmpty || _inputMode == 'transcription') {
+      return false;
+    }
+    if (normalized.runes.length > 6000) {
+      throw ArgumentError('消息最多 6000 个字符，请缩短后发送');
+    }
+    final socket = _socket;
+    DeviceLocation? location;
+    DeviceLocationResult? locationResult;
+    if (_backgroundActive && requestsDeviceLocation(normalized)) {
+      locationResult = await _currentDeviceLocation();
+      if (_backgroundActive &&
+          locationResult.status == DeviceLocationStatus.ok) {
+        location = locationResult.location;
+      }
+    }
+    if (socket != _socket || !isConnected) return false;
+    if (locationResult != null && location == null) {
+      _reportLocationFailure(
+        locationResult.status == DeviceLocationStatus.ok
+            ? const DeviceLocationResult(DeviceLocationStatus.unavailable)
+            : locationResult,
+      );
+    }
+    sendText(normalized, deviceLocation: location);
+    return true;
+  }
+
+  void sendText(String text, {DeviceLocation? deviceLocation}) {
     final normalized = text.trim();
     if (!isConnected || normalized.isEmpty || _inputMode == 'transcription') {
       return;
@@ -770,9 +809,66 @@ class VoiceSessionController extends ChangeNotifier {
     }
     _messages.add(ConversationEntry(role: 'human', text: normalized));
     _socket!.sendJson(
-      clientEvent('input.text', <String, Object?>{'text': normalized}),
+      clientEvent('input.text', <String, Object?>{
+        'text': normalized,
+        if (deviceLocation != null) 'device_location': deviceLocation.toJson(),
+      }),
     );
     _setState(VoiceConnectionState.thinking);
+  }
+
+  Future<DeviceLocationResult> _currentDeviceLocation() async {
+    try {
+      return await _locationProvider.currentLocation();
+    } catch (_) {
+      return const DeviceLocationResult(DeviceLocationStatus.unavailable);
+    }
+  }
+
+  void _reportLocationFailure(DeviceLocationResult result) {
+    final notice = result.notice;
+    if (notice == null) return;
+    _locationNotice = notice;
+    _locationNoticeSequence++;
+    if (!_disposed) notifyListeners();
+  }
+
+  Future<void> _replyDeviceLocation(
+    String requestId,
+    VoiceSocket socket,
+  ) async {
+    final result = _backgroundActive && _inputMode != 'transcription'
+        ? await _currentDeviceLocation()
+        : const DeviceLocationResult(DeviceLocationStatus.unavailable);
+    if (socket != _socket) return;
+    final location = result.location;
+    final status =
+        _backgroundActive &&
+            result.status == DeviceLocationStatus.ok &&
+            location != null
+        ? DeviceLocationStatus.ok
+        : result.status == DeviceLocationStatus.ok
+        ? DeviceLocationStatus.unavailable
+        : result.status;
+    if (status != DeviceLocationStatus.ok) {
+      _reportLocationFailure(
+        status == result.status
+            ? result
+            : const DeviceLocationResult(DeviceLocationStatus.unavailable),
+      );
+    }
+    try {
+      socket.sendJson(
+        clientEvent('location.result', <String, Object?>{
+          'request_id': requestId,
+          'status': status.name,
+          if (status == DeviceLocationStatus.ok)
+            'device_location': location!.toJson(),
+        }),
+      );
+    } on StateError {
+      return;
+    }
   }
 
   Future<void> cancelCurrent() async {
@@ -908,6 +1004,13 @@ class VoiceSessionController extends ChangeNotifier {
       return;
     }
     switch (type) {
+      case 'location.request':
+        final requestId = event['request_id'];
+        final socket = _socket;
+        if (requestId is! String || requestId.isEmpty || socket == null) {
+          break;
+        }
+        unawaited(_replyDeviceLocation(requestId, socket));
       case 'memory.context.request':
         final socket = _socket;
         if (!_usingLocalMemory || socket == null || responseId == null) break;
