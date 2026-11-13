@@ -84,7 +84,6 @@ class _VoiceHomePageState extends State<VoiceHomePage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    widget.controller.setBackgroundActive(state == AppLifecycleState.resumed);
     if (state == AppLifecycleState.resumed) {
       _defaultWakeAttempted = false;
       _scheduleDefaultWake();

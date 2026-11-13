@@ -25,7 +25,8 @@ class AgentVoiceApp extends StatefulWidget {
   State<AgentVoiceApp> createState() => _AgentVoiceAppState();
 }
 
-class _AgentVoiceAppState extends State<AgentVoiceApp> {
+class _AgentVoiceAppState extends State<AgentVoiceApp>
+    with WidgetsBindingObserver {
   late final VoiceSessionController _controller;
   late final AuthSessionStore _sessionStore;
   AuthUser? _currentUser;
@@ -34,15 +35,29 @@ class _AgentVoiceAppState extends State<AgentVoiceApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _sessionStore = widget.sessionStore;
     _controller = VoiceSessionController();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _controller.prepareDeviceLocation();
+    });
     unawaited(_restoreSession());
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _controller.setBackgroundActive(true);
+    } else if (state != AppLifecycleState.inactive) {
+      _controller.setBackgroundActive(false);
+    }
   }
 
   Future<void> _showSettings(BuildContext context) async {

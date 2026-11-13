@@ -66,7 +66,7 @@ fi
 
 cd "$project_dir"
 "$flutter_bin" build apk --debug --target=lib/main.dart --build-number="$build_number" --dart-define="API_BASE_URL=$base_url"
-"$adb_bin" -s "$device_id" install -r "$apk_path"
+"$adb_bin" -s "$device_id" install -r -g "$apk_path"
 "$adb_bin" -s "$device_id" reverse "tcp:$backend_port" "tcp:$backend_port"
 "$adb_bin" -s "$device_id" shell am force-stop "$package_name"
 "$adb_bin" -s "$device_id" shell am start -n "$package_name/.MainActivity"

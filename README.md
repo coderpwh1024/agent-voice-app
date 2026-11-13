@@ -102,7 +102,11 @@ BACKEND_PORT=8080 ./scripts/install_usb_debug.sh 20b2a515
 - iOS 模拟器可用 `http://127.0.0.1:8000`
 - 生产环境必须使用 HTTPS/WSS
 
-当你询问“我现在在哪”“附近有什么”或“从当前位置出发”时，App 才会请求前台位置权限，并获取一次当前位置。优先使用五分钟内的设备定位，否则最多等待 25 秒获取新位置。文字消息的 `input.text` 可携带 `device_location`（纬度、经度、米级精度和 UTC 获取时间）；语音识别出明确位置意图后，后端发送 `location.request`，App 以 `location.result` 回复。普通聊天和“王府井附近”这类指定地点的问题不会触发手机定位。拒绝权限、关闭定位服务或定位超时时，App 会显示具体提示，原问题仍会发送，回答可能需要你补充出发地。App 不持续跟踪，也不把坐标写入聊天消息。
+App 首次启动时即请求前台位置权限并预热定位，用户仍需通过系统授权。App 在前台持续更新位置，Android 使用系统定位更新（约 15 秒间隔），进入后台后停止订阅。五分钟内的位置可立即复用；冷启动获取位置最多约 9 秒，包括缓存检查，Android 在 Google 定位超时后自动尝试系统定位，不会反复等待 25 秒。并发定位请求共用同一次获取任务。
+
+支持前台位置更新的后端在 `session.ready` 中声明 `location_updates: true`，App 随即通过当前认证 WebSocket 的 `location.update` 传送位置；旧后端仍走逐轮协议。文字消息的 `input.text` 可携带 `device_location`（纬度、经度、米级精度和 UTC 获取时间），语音的 `location.request` 仍以 `location.result` 回复。后端只在“我现在在哪”“附近有哪些商场”等位置相关问题中使用坐标，普通聊天和“王府井附近”这类指定地点查询不附带设备定位上下文。坐标不写入聊天消息或长期记忆。
+
+拒绝权限、关闭定位服务或定位超时时，App 会显示具体提示，原问题仍会发送，用户可以补充地点。撤权或进入后台时，App 通知后端当前位置不可用；再次回到前台时重新检查授权和位置。APK 本身不能静默授予系统权限；本地 USB 安装脚本使用 `adb install -r -g` 在已授权的调试设备上授予所需运行时权限并保留已有数据。
 
 Android 使用前台粗略／精确位置权限；iOS 使用“使用 App 期间”权限。当前 iOS 工程使用 Swift Package Manager，构建 iOS 包时需设置 `BYPASS_PERMISSION_LOCATION_ALWAYS=1`，以保持仅前台定位权限。
 
@@ -193,6 +197,15 @@ flutter build apk --debug
 本仓库当前环境的 APK 位于 `build/app/outputs/flutter-apk/app-debug.apk`。
 
 `integration_test/audio_playback_test.dart` 在真机原生播放器上检查暂停期间的 PCM 保留、恢复后的完整时长以及连续取消后的完成时序；测试使用静音数据。可使用 `test_driver/integration_test.dart` 配合 `flutter drive --use-application-binary=<测试APK路径>` 运行，测试 APK 的入口为该集成测试文件，构建号应不低于手机已安装版本。测试后执行 USB 安装脚本恢复正常 App。
+
+`integration_test/configuration_backend_test.dart` 合并本地 API、真实 ASR/TTS、原生播放及
+设备定位检查，驱动为 `test_driver/configuration_backend_test.dart`，结果写入
+`build/configuration-backend-verification/`。测试读取手机已有安全登录态，不发送邮件或
+生成视频。ASR 合成 PCM 通过 `ASR_FIXTURE_URL` 指定，预期词可用
+`ASR_EXPECTED_TEXT` 配置。构建时传 `--dart-define=REQUIRE_MAP_SUCCESS=true` 会要求地图
+步骤真实成功；配额耗尽、Key 错误或服务不可用均判为地图验收失败。
+覆盖安装后使用 `flutter drive --use-existing-app=<测试进程 VM 地址> --keep-app-running`
+附加验证，完成后执行 USB 安装脚本恢复 `lib/main.dart` 正常入口并保留已有数据。
 
 iOS 首次构建前需要完成本机 Xcode 初始化：
 

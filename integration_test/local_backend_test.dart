@@ -195,11 +195,15 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 40));
     }
     socket.sendJson(clientEvent('input.commit'));
+    const expectedTranscript = String.fromEnvironment(
+      'ASR_EXPECTED_TEXT',
+      defaultValue: '联调',
+    );
     await _wait(
       () => events.any(
         (e) =>
             e['type'] == 'transcript.final' &&
-            (e['text'] as String? ?? '').contains('联调'),
+            (e['text'] as String? ?? '').contains(expectedTranscript),
       ),
     );
     await _wait(

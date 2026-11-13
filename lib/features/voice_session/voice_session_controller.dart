@@ -85,7 +85,7 @@ class VoiceSessionController extends ChangeNotifier {
        _audio = audio ?? NativeAudioBridge(),
        _wakeWordDetector = wakeWordDetector ?? SherpaWakeWordDetector(),
        _locationProvider =
-           locationProvider ?? const GeolocatorDeviceLocationProvider() {
+           locationProvider ?? GeolocatorDeviceLocationProvider() {
     _api = AgentApiClient(_config);
   }
 
@@ -94,6 +94,10 @@ class VoiceSessionController extends ChangeNotifier {
   final AudioBridge _audio;
   final WakeWordDetector _wakeWordDetector;
   final DeviceLocationProvider _locationProvider;
+  StreamSubscription<DeviceLocationResult>? _locationSubscription;
+  DeviceLocationResult? _latestLocationResult;
+  bool _supportsLocationUpdates = false;
+  int _locationEpoch = 0;
   VoiceSocket? _socket;
   VoiceSession? _session;
   VoiceCapabilities? _capabilities;
@@ -168,7 +172,70 @@ class VoiceSessionController extends ChangeNotifier {
   void setBackgroundActive(bool active) {
     _backgroundActive = active;
     _backgroundTimer?.cancel();
-    if (active) unawaited(refreshExecutionState());
+    if (active) {
+      prepareDeviceLocation();
+      unawaited(refreshExecutionState());
+    } else {
+      _locationEpoch++;
+      unawaited(_locationSubscription?.cancel());
+      _locationSubscription = null;
+      _latestLocationResult = const DeviceLocationResult(
+        DeviceLocationStatus.unavailable,
+      );
+      _sendLocationUpdate();
+    }
+  }
+
+  void prepareDeviceLocation() {
+    final provider = _locationProvider;
+    if (_disposed ||
+        !_backgroundActive ||
+        _locationSubscription != null ||
+        provider is! DeviceLocationTracking) {
+      return;
+    }
+    final epoch = ++_locationEpoch;
+    _locationSubscription = (provider as DeviceLocationTracking).watch().listen(
+      (result) {
+        if (_disposed || !_backgroundActive || epoch != _locationEpoch) return;
+        _latestLocationResult = result;
+        _sendLocationUpdate();
+      },
+      onError: (Object error) {
+        if (_disposed || epoch != _locationEpoch) return;
+        _latestLocationResult = const DeviceLocationResult(
+          DeviceLocationStatus.unavailable,
+        );
+        _sendLocationUpdate();
+      },
+      onDone: () {
+        if (epoch == _locationEpoch) _locationSubscription = null;
+      },
+    );
+  }
+
+  void _sendLocationUpdate() {
+    final result = _latestLocationResult;
+    if (!isConnected ||
+        !_supportsLocationUpdates ||
+        _inputMode == 'transcription' ||
+        result == null) {
+      return;
+    }
+    final location = _backgroundActive && result.location?.isFresh == true
+        ? result.location
+        : null;
+    final status = location != null
+        ? DeviceLocationStatus.ok
+        : result.status == DeviceLocationStatus.ok
+        ? DeviceLocationStatus.unavailable
+        : result.status;
+    _socket!.sendJson(
+      clientEvent('location.update', {
+        'status': status.name,
+        if (location != null) 'device_location': location.toJson(),
+      }),
+    );
   }
 
   void submitMemoryConfirmation(String id, bool approved) {
@@ -644,6 +711,7 @@ class VoiceSessionController extends ChangeNotifier {
     String inputMode = 'conversation',
   }) async {
     _ensureConfigured();
+    _supportsLocationUpdates = false;
     _setState(VoiceConnectionState.connecting);
     _error = null;
     try {
@@ -819,7 +887,9 @@ class VoiceSessionController extends ChangeNotifier {
 
   Future<DeviceLocationResult> _currentDeviceLocation() async {
     try {
-      return await _locationProvider.currentLocation();
+      final result = await _locationProvider.currentLocation();
+      _latestLocationResult = result;
+      return result;
     } catch (_) {
       return const DeviceLocationResult(DeviceLocationStatus.unavailable);
     }
@@ -1064,6 +1134,9 @@ class VoiceSessionController extends ChangeNotifier {
         _inputSequence = 0;
         _readyCompleter?.complete();
         _setState(VoiceConnectionState.ready);
+        _supportsLocationUpdates = event['location_updates'] == true;
+        _sendLocationUpdate();
+        if (_supportsLocationUpdates) prepareDeviceLocation();
       case 'input.started':
         if (_currentResponseId == null) {
           _setState(idleState);
@@ -1565,6 +1638,8 @@ class VoiceSessionController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _locationEpoch++;
+    unawaited(_locationSubscription?.cancel());
     _localMemory?.removeListener(_memoryChanged);
     _backgroundTimer?.cancel();
     _recoveryEpoch++;
