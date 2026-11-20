@@ -39,6 +39,7 @@ class VoiceHomePage extends StatefulWidget {
 class _VoiceHomePageState extends State<VoiceHomePage>
     with WidgetsBindingObserver {
   final TextEditingController _text = TextEditingController();
+  final FocusNode _textFocus = FocusNode();
   final ScrollController _scroll = ScrollController();
   String? _agentId;
   String? _voice;
@@ -48,6 +49,8 @@ class _VoiceHomePageState extends State<VoiceHomePage>
   bool _changingInput = false;
   bool _defaultWakeAttempted = false;
   bool _browsingHistory = false;
+  bool _voiceStopped = false;
+  bool _suspendingAudio = false;
   bool _followingLatest = true;
   bool _showBackToTop = false;
   bool _awayFromLatest = false;
@@ -67,6 +70,8 @@ class _VoiceHomePageState extends State<VoiceHomePage>
     _lastLocationNoticeSequence = widget.controller.locationNoticeSequence;
     _lastEntry = widget.controller.messages.lastOrNull;
     _scroll.addListener(_scrollChanged);
+    _textFocus.addListener(_textFocusChanged);
+    _text.addListener(_draftChanged);
     widget.controller.addListener(_changed);
     _scheduleFollowLatest();
     _scheduleDefaultWake();
@@ -76,6 +81,9 @@ class _VoiceHomePageState extends State<VoiceHomePage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_changed);
+    _textFocus.removeListener(_textFocusChanged);
+    _textFocus.dispose();
+    _text.removeListener(_draftChanged);
     _text.dispose();
     _scroll.removeListener(_scrollChanged);
     _scroll.dispose();
@@ -89,17 +97,55 @@ class _VoiceHomePageState extends State<VoiceHomePage>
       _scheduleDefaultWake();
       return;
     }
-    if (state != AppLifecycleState.resumed && widget.controller.isDictating) {
-      unawaited(widget.controller.disconnect());
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached ||
+        widget.controller.isDictating) {
+      unawaited(_suspendAudio());
     }
-    if ((state == AppLifecycleState.paused ||
-            state == AppLifecycleState.hidden ||
-            state == AppLifecycleState.detached) &&
-        widget.controller.wakeWordEnabled &&
-        !widget.controller.isConnected) {
+  }
+
+  Future<void> _suspendAudio() async {
+    if (_suspendingAudio) return;
+    _suspendingAudio = true;
+    try {
+      await widget.controller.stopVoiceInput();
+    } finally {
+      _suspendingAudio = false;
       _defaultWakeAttempted = false;
-      unawaited(widget.controller.disableWakeWord());
+      if (mounted) _scheduleDefaultWake();
     }
+  }
+
+  void _textFocusChanged() {
+    _defaultWakeAttempted = false;
+    if (_textFocus.hasFocus && !widget.controller.isConnected) {
+      unawaited(widget.controller.stopVoiceInput());
+    } else {
+      _scheduleDefaultWake();
+    }
+  }
+
+  void _draftChanged() {
+    if (_text.text.trim().isEmpty && !_textFocus.hasFocus) {
+      _defaultWakeAttempted = false;
+      _scheduleDefaultWake();
+    }
+  }
+
+  Future<void> _stopVoiceInput() async {
+    setState(() => _voiceStopped = true);
+    await widget.controller.stopVoiceInput();
+  }
+
+  void _editVoiceInput() {
+    final candidate = widget.controller.pendingVoiceInput;
+    if (candidate == null) return;
+    final separator = _text.text.trim().isEmpty ? '' : '\n';
+    _text.text += '$separator${candidate.text}';
+    _text.selection = TextSelection.collapsed(offset: _text.text.length);
+    widget.controller.dismissVoiceInput();
+    _textFocus.requestFocus();
   }
 
   void _changed() {
@@ -312,6 +358,8 @@ class _VoiceHomePageState extends State<VoiceHomePage>
   }
 
   Future<void> _connect() async {
+    _voiceStopped = false;
+    _textFocus.unfocus();
     final agent = _selectedAgent;
     final voice = _selectedVoice;
     if (agent == null || voice == null) {
@@ -354,8 +402,18 @@ class _VoiceHomePageState extends State<VoiceHomePage>
     final voice = _selectedVoice;
     final capabilities = controller.capabilities;
     if (_browsingHistory ||
+        _changingInput ||
+        _sendingText ||
+        _voiceStopped ||
+        _suspendingAudio ||
+        _textFocus.hasFocus ||
+        _text.text.trim().isNotEmpty ||
+        (WidgetsBinding.instance.lifecycleState != null &&
+            WidgetsBinding.instance.lifecycleState !=
+                AppLifecycleState.resumed) ||
         _enablingDefaultWake ||
         _defaultWakeAttempted ||
+        controller.state == VoiceConnectionState.connecting ||
         controller.isConnected ||
         controller.wakeWordEnabled ||
         !controller.config.isComplete ||
@@ -605,6 +663,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
     if (_changingInput || _sendingText) return;
     final controller = widget.controller;
     setState(() => _changingInput = true);
+    _textFocus.unfocus();
     try {
       if (controller.dictationState == DictationState.recording) {
         final transcript = await controller.finishDictation();
@@ -1039,6 +1098,20 @@ class _VoiceHomePageState extends State<VoiceHomePage>
                       ),
                     ),
                   ),
+                if (controller.pendingVoiceInput case final candidate?)
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: availableHeight * 0.22,
+                    ),
+                    child: SingleChildScrollView(
+                      child: _VoiceInputReview(
+                        text: candidate.text,
+                        compact: keyboardOpen,
+                        onEdit: _editVoiceInput,
+                        onDismiss: controller.dismissVoiceInput,
+                      ),
+                    ),
+                  ),
                 _VoiceControls(
                   state: controller.state,
                   connected: connected && controller.inputMode != 'text',
@@ -1055,7 +1128,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
                   onPressed: controller.state == VoiceConnectionState.connecting
                       ? null
                       : connected && controller.inputMode != 'text'
-                      ? controller.disconnect
+                      ? _stopVoiceInput
                       : !controller.config.isComplete
                       ? _openSettings
                       : capabilities?.enabled == true
@@ -1066,6 +1139,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
                 ),
                 _Composer(
                   controller: _text,
+                  focusNode: _textFocus,
                   maxLines: keyboardOpen ? (availableHeight < 420 ? 1 : 2) : 4,
                   enabled:
                       controller.config.isComplete &&
@@ -1073,6 +1147,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
                       !controller.isDictating &&
                       controller.state != VoiceConnectionState.connecting,
                   canInterrupt:
+                      !controller.isDictating &&
                       connected &&
                       controller.inputMode == 'conversation' &&
                       controller.currentResponseId != null,
@@ -1195,7 +1270,7 @@ class _VoiceControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final label = connected
-        ? '结束对话'
+        ? '结束收音'
         : !configured
         ? '配置服务'
         : !available
@@ -1204,6 +1279,7 @@ class _VoiceControls extends StatelessWidget {
     final button = FilledButton.icon(
       onPressed: onPressed,
       style: FilledButton.styleFrom(
+        enableFeedback: false,
         backgroundColor: connected
             ? theme.colorScheme.surfaceContainerHighest
             : AppPalette(context).ink,
@@ -1839,9 +1915,67 @@ class _ApprovalCard extends StatelessWidget {
   }
 }
 
+class _VoiceInputReview extends StatelessWidget {
+  const _VoiceInputReview({
+    required this.text,
+    required this.compact,
+    required this.onEdit,
+    required this.onDismiss,
+  });
+
+  final String text;
+  final bool compact;
+  final VoidCallback onEdit;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+    padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+    decoration: BoxDecoration(
+      color: AppPalette(context).blush,
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Row(
+      children: [
+        Expanded(
+          child: compact
+              ? Text('待确认：$text', maxLines: 1, overflow: TextOverflow.ellipsis)
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '语音待确认',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
+                    Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+        ),
+        IconButton(
+          tooltip: '编辑这段文字',
+          enableFeedback: false,
+          onPressed: onEdit,
+          icon: const Icon(Icons.edit_note_rounded),
+        ),
+        IconButton(
+          tooltip: '忽略这段语音',
+          enableFeedback: false,
+          onPressed: onDismiss,
+          icon: const Icon(Icons.close_rounded),
+        ),
+      ],
+    ),
+  );
+}
+
 class _Composer extends StatelessWidget {
   const _Composer({
     required this.controller,
+    required this.focusNode,
     required this.maxLines,
     required this.enabled,
     required this.canInterrupt,
@@ -1858,6 +1992,7 @@ class _Composer extends StatelessWidget {
   final bool canDictate;
   final VoidCallback onDictate;
   final TextEditingController controller;
+  final FocusNode focusNode;
   final int maxLines;
   final bool enabled;
   final bool canInterrupt;
@@ -1883,6 +2018,7 @@ class _Composer extends StatelessWidget {
           child: Row(
             children: [
               IconButton(
+                enableFeedback: false,
                 tooltip: dictationState == DictationState.recording
                     ? '完成转写'
                     : dictationState == DictationState.transcribing
@@ -1892,7 +2028,7 @@ class _Composer extends StatelessWidget {
                 icon: Icon(
                   dictationState == DictationState.recording
                       ? Icons.stop_circle_outlined
-                      : Icons.mic_none_rounded,
+                      : Icons.edit_note_rounded,
                 ),
                 color: dictationState == DictationState.recording
                     ? Theme.of(context).colorScheme.error
@@ -1900,6 +2036,7 @@ class _Composer extends StatelessWidget {
               ),
               if (canInterrupt) ...[
                 IconButton.outlined(
+                  enableFeedback: false,
                   tooltip: '我要插话',
                   onPressed: onSpeechHint,
                   iconSize: 20,
@@ -1914,6 +2051,7 @@ class _Composer extends StatelessWidget {
               Expanded(
                 child: TextField(
                   controller: controller,
+                  focusNode: focusNode,
                   minLines: 1,
                   maxLines: maxLines,
                   textInputAction: TextInputAction.send,
@@ -1940,6 +2078,7 @@ class _Composer extends StatelessWidget {
               const SizedBox(width: 4),
               if (isSpeaking)
                 IconButton.filled(
+                  enableFeedback: false,
                   tooltip: '立即停止回答',
                   onPressed: onStop,
                   iconSize: 20,
@@ -1952,6 +2091,7 @@ class _Composer extends StatelessWidget {
               ValueListenableBuilder<TextEditingValue>(
                 valueListenable: controller,
                 builder: (context, value, _) => IconButton.filled(
+                  enableFeedback: false,
                   tooltip: '发送文字',
                   onPressed: enabled && value.text.trim().isNotEmpty
                       ? onSend

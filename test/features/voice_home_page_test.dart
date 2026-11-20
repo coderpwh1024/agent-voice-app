@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:agent_voice_app/core/api/api_models.dart';
+import 'package:agent_voice_app/core/api/voice_protocol.dart';
 import 'package:agent_voice_app/core/config/app_config.dart';
 import 'package:agent_voice_app/core/location/device_location.dart';
 import 'package:agent_voice_app/core/theme/app_theme.dart';
@@ -37,8 +38,16 @@ class ChatPreviewController extends VoiceSessionController {
   });
 
   bool connected = false;
+  int voiceStops = 0;
   String? responseId;
   VoiceConnectionState? previewState;
+
+  @override
+  Future<void> stopVoiceInput() async {
+    voiceStops++;
+    connected = false;
+    redraw();
+  }
 
   @override
   bool get isConnected => connected;
@@ -81,6 +90,16 @@ class ComposerPreviewController extends ChatPreviewController {
   String mode = 'conversation';
   DictationState dictation = DictationState.idle;
   final sent = <String>[];
+  VoiceTranscriptReview? review;
+
+  @override
+  VoiceTranscriptReview? get pendingVoiceInput => review;
+
+  @override
+  void dismissVoiceInput() {
+    review = null;
+    redraw();
+  }
 
   @override
   String get inputMode => mode;
@@ -132,6 +151,47 @@ class ComposerPreviewController extends ChatPreviewController {
     connected = false;
     redraw();
     return '语音转换的文字';
+  }
+}
+
+class IdleWakePreviewController extends ComposerPreviewController {
+  bool armed = false;
+  bool starting = false;
+  int wakeStarts = 0;
+
+  @override
+  VoiceConnectionState get state =>
+      starting ? VoiceConnectionState.connecting : super.state;
+
+  @override
+  VoiceCapabilities get capabilities => VoiceCapabilities.fromJson({
+    'enabled': true,
+    'protocol_version': 1,
+    'voices': ['Cherry'],
+    'agents': [
+      {'id': 'chatbot'},
+    ],
+    'wake_word': {'enabled': true, 'keyword': '小美小美'},
+  });
+
+  @override
+  bool get wakeWordEnabled => armed;
+
+  @override
+  Future<void> enableWakeWord({
+    required String agentId,
+    required String voice,
+    String? threadId,
+  }) async {
+    wakeStarts++;
+    armed = true;
+    redraw();
+  }
+
+  @override
+  Future<void> stopVoiceInput() async {
+    armed = false;
+    await super.stopVoiceInput();
   }
 }
 
@@ -466,6 +526,133 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'review never overwrites a draft or sends without explicit action',
+    (tester) async {
+      final controller = ComposerPreviewController();
+      await mountChat(tester, controller, useAppTheme: true);
+      await tester.enterText(find.byType(TextField), '已有草稿');
+      controller.review = const VoiceTranscriptReview(
+        inputId: 'review-1',
+        text: 'KK.',
+        reason: 'uncertain_text',
+      );
+      controller.redraw();
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        '已有草稿',
+      );
+      expect(controller.sent, isEmpty);
+      await captureInputPreview(tester, 'voice-input-review');
+      await tester.tap(find.byTooltip('编辑这段文字'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        '已有草稿\nKK.',
+      );
+      expect(controller.sent, isEmpty);
+      await tester.enterText(find.byType(TextField), 'Q 是什么？');
+      await tester.tap(find.byTooltip('发送文字'));
+      await tester.pumpAndSettle();
+      expect(controller.sent, ['Q 是什么？']);
+    },
+  );
+
+  testWidgets('typing and a retained draft suspend idle wake capture', (
+    tester,
+  ) async {
+    final controller = IdleWakePreviewController()..starting = true;
+    await mountChat(tester, controller, useAppTheme: true);
+    expect(controller.wakeStarts, 0);
+    controller.starting = false;
+    controller.redraw();
+    await tester.pumpAndSettle();
+    expect(controller.wakeStarts, 1);
+    await tester.enterText(find.byType(TextField), '未发送草稿');
+    await tester.pumpAndSettle();
+    expect(controller.armed, isFalse);
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    expect(controller.wakeStarts, 1);
+    await tester.enterText(find.byType(TextField), '');
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    expect(controller.wakeStarts, 2);
+  });
+
+  testWidgets('ending capture and going to background release voice input', (
+    tester,
+  ) async {
+    final controller = ComposerPreviewController()..connected = true;
+    await mountChat(tester, controller, useAppTheme: true);
+    await tester.tap(find.text('结束收音'));
+    await tester.pumpAndSettle();
+    expect(controller.voiceStops, 1);
+    expect(controller.connected, isFalse);
+    controller.connected = true;
+    controller.redraw();
+    for (final state in [
+      AppLifecycleState.inactive,
+      AppLifecycleState.hidden,
+      AppLifecycleState.paused,
+    ]) {
+      tester.binding.handleAppLifecycleStateChanged(state);
+    }
+    await tester.pumpAndSettle();
+    expect(controller.connected, isFalse);
+    expect(controller.voiceStops, 2);
+    for (final state in [
+      AppLifecycleState.hidden,
+      AppLifecycleState.inactive,
+      AppLifecycleState.resumed,
+    ]) {
+      tester.binding.handleAppLifecycleStateChanged(state);
+    }
+    await tester.pumpAndSettle();
+    expect(controller.connected, isFalse);
+  });
+
+  for (final brightness in Brightness.values) {
+    testWidgets('voice input review fits 320px at 200% in $brightness', (
+      tester,
+    ) async {
+      final controller = ComposerPreviewController()
+        ..review = const VoiceTranscriptReview(
+          inputId: 'review-1',
+          text: 'KK. Q.',
+          reason: 'uncertain_text',
+        );
+      await mountChat(
+        tester,
+        controller,
+        size: const Size(320, 640),
+        textScale: 2,
+        brightness: brightness,
+        useAppTheme: true,
+      );
+      expect(tester.takeException(), isNull);
+      await captureInputPreview(
+        tester,
+        'voice-input-review-${brightness.name}-320',
+      );
+      tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await captureInputPreview(
+        tester,
+        'voice-input-review-${brightness.name}-keyboard',
+      );
+      expect(find.byTooltip('编辑这段文字').hitTestable(), findsOneWidget);
+      expect(find.byTooltip('忽略这段语音').hitTestable(), findsOneWidget);
+      await tester.tap(find.byTooltip('忽略这段语音'));
+      await tester.pumpAndSettle();
+      expect(controller.review, isNull);
+      expect(controller.sent, isEmpty);
+    });
+  }
+
   for (final brightness in Brightness.values) {
     testWidgets('interrupt controls fit 320px at 200% in $brightness', (
       tester,
@@ -503,7 +690,7 @@ void main() {
           brightness: brightness,
         );
         expect(tester.takeException(), isNull);
-        expect(find.text('结束对话').hitTestable(), findsOneWidget);
+        expect(find.text('结束收音').hitTestable(), findsOneWidget);
         await tester.tap(find.byTooltip('对话偏好'));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
@@ -518,7 +705,7 @@ void main() {
         await tester.tap(find.byType(TextField));
         await tester.enterText(find.byType(TextField), '写下一点今天的小事');
         await tester.pumpAndSettle();
-        expect(find.text('结束对话').hitTestable(), findsOneWidget);
+        expect(find.text('结束收音').hitTestable(), findsOneWidget);
         expect(find.byType(TextField).hitTestable(), findsOneWidget);
       },
     );

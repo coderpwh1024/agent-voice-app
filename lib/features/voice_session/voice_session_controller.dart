@@ -75,6 +75,10 @@ class ApprovalPrompt {
   final Object? value;
 }
 
+class _VoiceConnectionCancelled implements Exception {
+  const _VoiceConnectionCancelled();
+}
+
 class VoiceSessionController extends ChangeNotifier {
   VoiceSessionController({
     AppConfig? config,
@@ -445,8 +449,18 @@ class VoiceSessionController extends ChangeNotifier {
   DictationState _dictationState = DictationState.idle;
   String _dictationText = '';
   Completer<String>? _dictationCompleter;
+  VoiceTranscriptReview? _pendingVoiceInput;
+  final Set<String> _seenTranscripts = <String>{};
+  int _connectionEpoch = 0;
 
   String get inputMode => _inputMode;
+  VoiceTranscriptReview? get pendingVoiceInput => _pendingVoiceInput;
+
+  void dismissVoiceInput() {
+    _pendingVoiceInput = null;
+    if (!_disposed) notifyListeners();
+  }
+
   DictationState get dictationState => _dictationState;
   bool get isDictating => _dictationState != DictationState.idle;
   VoiceConnectionState get idleState => _inputMode == 'text'
@@ -661,6 +675,7 @@ class VoiceSessionController extends ChangeNotifier {
     if (!isConnected) {
       if (hadWakeAudio) {
         await _audio.stop();
+        _processingState = null;
         await _cancelAudioSubscriptions();
       }
       _setState(VoiceConnectionState.disconnected);
@@ -710,12 +725,22 @@ class VoiceSessionController extends ChangeNotifier {
     required bool wakeActivation,
     String inputMode = 'conversation',
   }) async {
+    final epoch = ++_connectionEpoch;
+    VoiceSession? pendingSession;
+    VoiceSocket? pendingSocket;
+    void ensureCurrent() {
+      if (_disposed || epoch != _connectionEpoch) {
+        throw const _VoiceConnectionCancelled();
+      }
+    }
+
     _ensureConfigured();
     _supportsLocationUpdates = false;
     _setState(VoiceConnectionState.connecting);
     _error = null;
     try {
       await loadCapabilities();
+      ensureCurrent();
       _setState(VoiceConnectionState.connecting);
       final selectedVoice = _capabilities!.selectVoice(voice);
       if (selectedVoice == null) {
@@ -727,11 +752,13 @@ class VoiceSessionController extends ChangeNotifier {
       }
       if (inputMode != 'text') {
         final granted = await _audio.requestMicrophonePermission();
+        ensureCurrent();
         if (!granted) throw StateError('没有麦克风权限，请允许录音或直接输入文字');
       }
       _inputMode = inputMode;
       await _prepareLocalMemory();
-      _session = await _api.createVoiceSession(
+      ensureCurrent();
+      pendingSession = await _api.createVoiceSession(
         agentId: agentId,
         voice: selectedVoice,
         threadId: threadId,
@@ -744,6 +771,8 @@ class VoiceSessionController extends ChangeNotifier {
             ? (_usingLocalMemory ? 'local' : 'mem0')
             : null,
       );
+      ensureCurrent();
+      _session = pendingSession;
       if (_recoveryThread != _session!.threadId) {
         _recoveryEpoch++;
         _videoPolls.clear();
@@ -756,6 +785,8 @@ class VoiceSessionController extends ChangeNotifier {
         _api.websocketUri(_session!.sessionId),
         headers: _api.websocketHeaders(),
       );
+      pendingSocket = socket;
+      ensureCurrent();
       _socket = socket;
       _readyCompleter = Completer<void>();
       _socketSubscription = socket.messages
@@ -776,12 +807,14 @@ class VoiceSessionController extends ChangeNotifier {
         }),
       );
       await _readyCompleter!.future.timeout(const Duration(seconds: 12));
+      ensureCurrent();
       if (threadId != null) unawaited(refreshExecutionState());
       _processingState = await _audio.start(
         inputMode == 'text'
             ? AudioCaptureMode.playback
             : AudioCaptureMode.conversation,
       );
+      ensureCurrent();
       _metrics.reset();
       _acceptLiveAudio = inputMode != 'text';
       if (wakeActivation) {
@@ -791,9 +824,20 @@ class VoiceSessionController extends ChangeNotifier {
         _pendingWakeAudio.clear();
       }
       _setState(idleState);
+    } on _VoiceConnectionCancelled {
+      await pendingSocket?.close();
+      if (pendingSession != null) {
+        try {
+          await _api.closeVoiceSession(pendingSession.sessionId);
+        } catch (_) {
+          // An unclaimed session still expires if best-effort cleanup fails.
+        }
+      }
     } catch (error) {
-      _recordError(error);
-      await _teardown(sendClose: false);
+      if (epoch == _connectionEpoch) {
+        _recordError(error);
+        await _teardown(sendClose: false);
+      }
       rethrow;
     }
   }
@@ -818,6 +862,15 @@ class VoiceSessionController extends ChangeNotifier {
 
   Future<void> disconnect() async {
     await _teardown(sendClose: true);
+  }
+
+  Future<void> stopVoiceInput() async {
+    _connectionEpoch++;
+    try {
+      await disableWakeWord();
+    } finally {
+      await disconnect();
+    }
   }
 
   Future<void> reconnect() async {
@@ -875,6 +928,7 @@ class VoiceSessionController extends ChangeNotifier {
     if (normalized.runes.length > 6000) {
       throw ArgumentError('消息最多 6000 个字符，请缩短后发送');
     }
+    _pendingVoiceInput = null;
     _messages.add(ConversationEntry(role: 'human', text: normalized));
     _socket!.sendJson(
       clientEvent('input.text', <String, Object?>{
@@ -1025,6 +1079,8 @@ class VoiceSessionController extends ChangeNotifier {
     _messages.clear();
     _assistantIndexes.clear();
     _invalidResponses.clear();
+    _seenTranscripts.clear();
+    _pendingVoiceInput = null;
     _partialTranscript = '';
     _approval = null;
     _session = null;
@@ -1036,6 +1092,8 @@ class VoiceSessionController extends ChangeNotifier {
     final epoch = ++_recoveryEpoch;
     final history = await _api.history(agentId, threadId);
     if (_disposed || !_backgroundActive || epoch != _recoveryEpoch) return;
+    _seenTranscripts.clear();
+    _pendingVoiceInput = null;
     _assistantIndexes.clear();
     _submittedConfirmations.clear();
     _recoveryThread = threadId;
@@ -1061,6 +1119,15 @@ class VoiceSessionController extends ChangeNotifier {
 
   Future<void> _handleEvent(Map<String, dynamic> event) async {
     final type = event['type'] as String? ?? '';
+    if (type == 'transcript.final' || type == 'transcript.review') {
+      final inputId = event['input_id'];
+      if (inputId is String && inputId.isNotEmpty && inputId.length <= 256) {
+        if (!_seenTranscripts.add('$type:$inputId')) return;
+        if (_seenTranscripts.length > 256) {
+          _seenTranscripts.remove(_seenTranscripts.first);
+        }
+      }
+    }
     final responseId = event['response_id'] as String?;
     if (responseId != null &&
         _invalidResponses.contains(responseId) &&
@@ -1151,6 +1218,13 @@ class VoiceSessionController extends ChangeNotifier {
         final text = event['text'] as String? ?? '';
         _partialTranscript = _isNonActionableVoiceText(text) ? '' : text;
         notifyListeners();
+      case 'transcript.review':
+        if (_inputMode != 'conversation' || _wakeConfirmationPending) break;
+        final review = VoiceTranscriptReview.tryParse(event);
+        if (review == null) break;
+        _pendingVoiceInput = review;
+        _partialTranscript = '';
+        notifyListeners();
       case 'transcript.final':
         if (_inputMode == 'transcription') {
           _dictationText += event['text'] as String? ?? '';
@@ -1170,6 +1244,7 @@ class VoiceSessionController extends ChangeNotifier {
             _pendingWakeTranscript = text.trim();
           }
         } else if (text.trim().isNotEmpty) {
+          _pendingVoiceInput = null;
           _messages.add(ConversationEntry(role: 'human', text: text.trim()));
         }
         if (text.trim().isEmpty) {
@@ -1549,6 +1624,7 @@ class VoiceSessionController extends ChangeNotifier {
     bool preserveSession = false,
   }) async {
     if (_tearingDown) return;
+    _connectionEpoch++;
     _tearingDown = true;
     final dictation = _dictationCompleter;
     _dictationCompleter = null;
@@ -1565,6 +1641,7 @@ class VoiceSessionController extends ChangeNotifier {
       final oldSession = _session;
       _socket = null;
       _connectionId = null;
+      _seenTranscripts.clear();
       _currentResponseId = null;
       _responseHasAudio = false;
       _responseClock.stop();
@@ -1584,6 +1661,7 @@ class VoiceSessionController extends ChangeNotifier {
       await _socketSubscription?.cancel();
       _socketSubscription = null;
       await _audio.stop();
+      _processingState = null;
       await socket?.close();
       if (sendClose && oldSession != null) {
         try {
@@ -1653,8 +1731,11 @@ class VoiceSessionController extends ChangeNotifier {
 }
 
 bool _isNonActionableVoiceText(String text) {
-  final normalized = text.replaceAll(RegExp(r'[\p{P}\s]+', unicode: true), '');
-  return normalized.isEmpty ||
+  final normalized = text.replaceAll(
+    RegExp(r'[\p{P}\p{C}\s]+', unicode: true),
+    '',
+  );
+  return !RegExp(r'[\p{L}\p{N}]', unicode: true).hasMatch(normalized) ||
       const <String>{'嗯', '嗯嗯', '呃', '额', '啊', '呢', '那'}.contains(normalized);
 }
 

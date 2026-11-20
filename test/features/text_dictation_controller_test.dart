@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -12,12 +13,20 @@ import 'voice_session_controller_test.dart' show FakeAudioBridge, waitUntil;
 
 class InputAudioBridge extends FakeAudioBridge {
   int permissionRequests = 0;
+  int stops = 0;
   bool permissionGranted = true;
 
   @override
   Future<bool> requestMicrophonePermission() async {
     permissionRequests++;
+    await onPermissionRequest?.call();
     return permissionGranted;
+  }
+
+  @override
+  Future<void> stop() async {
+    stops++;
+    await super.stop();
   }
 }
 
@@ -165,6 +174,98 @@ void main() {
       expect(audioFrames, 0);
       expect(() => controller.sendText('字' * 6001), throwsArgumentError);
       expect(controller.messages, hasLength(1));
+    },
+  );
+
+  test(
+    'uncertain voice stays outside messages and memory until explicit send',
+    () async {
+      await controller.connect(agentId: 'mem0-chatbot', voice: 'Cherry');
+      final candidate = {
+        'type': 'transcript.review',
+        'input_id': 'voice-candidate',
+        'text': 'KK.',
+        'reason': 'uncertain_text',
+      };
+      sockets.last.add(jsonEncode(candidate));
+      await waitUntil(() => controller.pendingVoiceInput != null);
+      expect(controller.messages, isEmpty);
+      expect(controller.state, VoiceConnectionState.listening);
+      expect(events.where((event) => event['type'] == 'input.text'), isEmpty);
+      controller.dismissVoiceInput();
+      sockets.last.add(jsonEncode(candidate));
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(controller.pendingVoiceInput, isNull);
+      sockets.last.add(
+        jsonEncode({
+          ...candidate,
+          'input_id': 'second-candidate',
+          'text': 'Q.',
+        }),
+      );
+      await waitUntil(() => controller.pendingVoiceInput != null);
+      controller.sendText('Q 是什么？');
+      expect(controller.pendingVoiceInput, isNull);
+      expect(controller.messages.single.text, 'Q 是什么？');
+      await waitUntil(
+        () => events.any((event) => event['type'] == 'input.text'),
+      );
+    },
+  );
+
+  test(
+    'ending voice stops capture and prevents subsequent microphone uploads',
+    () async {
+      await controller.connect(agentId: 'mem0-chatbot', voice: 'Cherry');
+      audio.microphone.add(Uint8List(1280));
+      await waitUntil(() => audioFrames == 1);
+      await controller.stopVoiceInput();
+      final stoppedFrames = audioFrames;
+      audio.microphone.add(Uint8List(1280));
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(audioFrames, stoppedFrames);
+      expect(audio.stops, greaterThan(0));
+      expect(controller.wakeWordEnabled, isFalse);
+      expect(controller.isConnected, isFalse);
+      expect(controller.audioProcessingState, isNull);
+    },
+  );
+
+  test('duplicate final transcripts do not duplicate human messages', () async {
+    await controller.connect(agentId: 'mem0-chatbot', voice: 'Cherry');
+    final event = {
+      'type': 'transcript.final',
+      'input_id': 'same-input',
+      'text': '好的',
+    };
+    sockets.last.add(jsonEncode(event));
+    sockets.last.add(jsonEncode(event));
+    sockets.last.add(jsonEncode({'type': 'transcript.partial', 'text': '下一句'}));
+    await waitUntil(() => controller.partialTranscript == '下一句');
+    expect(controller.messages.map((message) => message.text), ['好的']);
+  });
+
+  test(
+    'stopping voice during permission acquisition cannot reopen capture',
+    () async {
+      final permissionStarted = Completer<void>();
+      final permissionResult = Completer<void>();
+      audio.onPermissionRequest = () async {
+        permissionStarted.complete();
+        await permissionResult.future;
+      };
+      final connection = controller.connect(
+        agentId: 'mem0-chatbot',
+        voice: 'Cherry',
+      );
+      await permissionStarted.future;
+      await controller.stopVoiceInput();
+      permissionResult.complete();
+      await connection;
+      expect(controller.isConnected, isFalse);
+      expect(controller.wakeWordEnabled, isFalse);
+      expect(audio.startedModes, isEmpty);
+      expect(sessions, isEmpty);
     },
   );
 

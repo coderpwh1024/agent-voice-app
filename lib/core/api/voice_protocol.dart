@@ -7,6 +7,36 @@ const int audioHeaderBytes = 45;
 const int maxAudioPayloadBytes = 6400;
 const String zeroUuid = '00000000-0000-0000-0000-000000000000';
 
+class VoiceTranscriptReview {
+  const VoiceTranscriptReview({
+    required this.inputId,
+    required this.text,
+    required this.reason,
+  });
+
+  final String inputId;
+  final String text;
+  final String reason;
+
+  static VoiceTranscriptReview? tryParse(Map<String, dynamic> json) {
+    final inputId = json['input_id'];
+    final text = json['text'];
+    final reason = json['reason'];
+    if (inputId is! String ||
+        inputId.isEmpty ||
+        inputId.length > 256 ||
+        text is! String ||
+        text.trim().isEmpty ||
+        text.runes.length > 6000 ||
+        reason is! String ||
+        reason.isEmpty ||
+        reason.length > 64) {
+      return null;
+    }
+    return VoiceTranscriptReview(inputId: inputId, text: text, reason: reason);
+  }
+}
+
 final Random _secureRandom = Random.secure();
 
 enum VoiceAudioStatus { queued, running, completed, cancelled, failed }
