@@ -58,6 +58,7 @@ class SherpaWakeWordDetector implements WakeWordDetector {
   Completer<void>? _stopped;
   Future<void> _lifecycle = Future<void>.value();
   bool _disposed = false;
+  int _resetGeneration = 0;
 
   @override
   Stream<WakeDetection> get detections => _detections.stream;
@@ -102,7 +103,11 @@ class SherpaWakeWordDetector implements WakeWordDetector {
             ready.complete();
           }
         case 'detected':
-          _detections.add(WakeDetection(keyword: message['keyword'] as String));
+          if (_commands != null && message['generation'] == _resetGeneration) {
+            _detections.add(
+              WakeDetection(keyword: message['keyword'] as String),
+            );
+          }
         case 'error':
           _commands = null;
           _activeConfig = null;
@@ -138,6 +143,7 @@ class SherpaWakeWordDetector implements WakeWordDetector {
           'keywords': paths['keywords.txt']!,
           'score': config.score,
           'threshold': config.threshold,
+          'generation': _resetGeneration,
         },
         onError: errors.sendPort,
         debugName: 'agent-voice-kws',
@@ -186,7 +192,11 @@ class SherpaWakeWordDetector implements WakeWordDetector {
 
   @override
   void reset() {
-    _commands?.send(<String, Object>{'type': 'reset'});
+    _resetGeneration++;
+    _commands?.send(<String, Object>{
+      'type': 'reset',
+      'generation': _resetGeneration,
+    });
   }
 
   /// Wait for queued PCM to be decoded without ending the live audio stream.
@@ -215,6 +225,7 @@ class SherpaWakeWordDetector implements WakeWordDetector {
 
   Future<void> _stopWorker() async {
     final commands = _commands;
+    _commands = null;
     if (commands != null) {
       commands.send(<String, Object>{'type': 'stop'});
       await _stopped!.future.timeout(
@@ -222,7 +233,6 @@ class SherpaWakeWordDetector implements WakeWordDetector {
         onTimeout: () {},
       );
     }
-    _commands = null;
     _activeConfig = null;
     _isolate?.kill(priority: Isolate.beforeNextEvent);
     _isolate = null;
@@ -280,6 +290,7 @@ void _wakeWordWorker(Map<String, Object> arguments) {
   final activeSpotter = spotter;
   var activeStream = stream;
   var detected = false;
+  var generation = arguments['generation']! as int;
 
   commands.listen((dynamic raw) {
     if (raw is! Map) {
@@ -306,6 +317,7 @@ void _wakeWordWorker(Map<String, Object> arguments) {
               resultPort.send(<String, Object>{
                 'type': 'detected',
                 'keyword': result.keyword,
+                'generation': generation,
               });
               break;
             }
@@ -315,6 +327,7 @@ void _wakeWordWorker(Map<String, Object> arguments) {
           activeStream.free();
           activeStream = activeSpotter.createStream();
           detected = false;
+          generation = raw['generation'] as int;
         case 'barrier':
           (raw['reply'] as SendPort).send(true);
         case 'stop':

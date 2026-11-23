@@ -20,6 +20,7 @@ class FakeAudioBridge implements AudioBridge {
   final List<String> operations = <String>[];
   final List<AudioCaptureMode> startedModes = <AudioCaptureMode>[];
   Future<void> Function()? onPermissionRequest;
+  Future<void> Function(AudioCaptureMode)? onStart;
   int pauseCalls = 0;
   int resumeCalls = 0;
 
@@ -71,6 +72,7 @@ class FakeAudioBridge implements AudioBridge {
   @override
   Future<AudioProcessingState> start(AudioCaptureMode mode) async {
     startedModes.add(mode);
+    await onStart?.call(mode);
     return AudioProcessingState(
       mode: mode,
       aecAvailable: true,
@@ -637,11 +639,14 @@ void main() {
 
         await controller.loadCapabilities();
         await controller.enableWakeWord(agentId: 'chatbot', voice: 'Cherry');
+        expect(controller.isWakeListening, isFalse);
         for (var index = 0; index < 120; index++) {
           audio.microphone.add(Uint8List(1280)..fillRange(0, 1280, index));
         }
         await waitUntil(() => wake.frames.length == 120);
-        await controller.loadCapabilities();
+        final refresh = controller.loadCapabilities();
+        expect(controller.isWakeListening, isTrue);
+        await refresh;
         expect(
           controller.isWakeListening,
           isTrue,
@@ -664,11 +669,11 @@ void main() {
         expect(controller.isWakeActivating, isTrue);
         expect(audio.startedModes, <AudioCaptureMode>[
           AudioCaptureMode.standby,
-          AudioCaptureMode.conversation,
         ]);
+        expect(capabilityReads, 2);
         expect(createdBodies.single['pre_roll_samples'], 64000);
-        await waitUntil(() => receivedPcm.length >= 129280);
-        expect(receivedPcm.length, 129280);
+        await waitUntil(() => receivedPcm.length >= 101 * 1280);
+        expect(receivedPcm.length, 101 * 1280);
         expect(receivedPcm.take(1280), everyElement(20));
         expect(receivedPcm.skip(99 * 1280).take(1280), everyElement(119));
         expect(receivedPcm.skip(100 * 1280), everyElement(250));
@@ -718,14 +723,23 @@ void main() {
         expect(controller.messages.length, wakeCase.expected.isEmpty ? 1 : 2);
         expect(controller.messages.last.text, '我在，小美随时为你服务。');
         expect(controller.isWakeActivating, isFalse);
+        expect(audio.startedModes.last, AudioCaptureMode.conversation);
         expect(audio.operations, contains('audio'));
 
         wakeSocket!.add(jsonEncode(<String, Object?>{'type': 'wake.rejected'}));
+        await waitUntil(() => audio.startedModes.length == 3);
+        audio.microphone.add(Uint8List(1280));
         await waitUntil(
           () => controller.state == VoiceConnectionState.wakeListening,
         );
-        expect(controller.error, isNull);
-        expect(controller.state, VoiceConnectionState.wakeListening);
+        expect(controller.error, contains('服务未能确认'));
+        audio.microphone.addError(StateError('捕获中断'));
+        await waitUntil(() => controller.error == '捕获中断');
+        expect(controller.wakeWordEnabled, isFalse);
+        expect(controller.isWakeListening, isFalse);
+        await controller.enableWakeWord(agentId: 'chatbot', voice: 'Cherry');
+        audio.microphone.add(Uint8List(1280));
+        await waitUntil(() => controller.isWakeListening);
         await controller.disableWakeWord();
         expect(controller.state, VoiceConnectionState.disconnected);
         controller.dispose();
@@ -734,4 +748,51 @@ void main() {
       },
     );
   }
+
+  test('failed standby start can be retried and no frames time out', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    server.listen((request) async {
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(
+        jsonEncode({
+          'code': 200,
+          'data': {
+            'enabled': true,
+            'protocol_version': 1,
+            'voices': ['Cherry'],
+            'wake_word': {'enabled': true},
+          },
+        }),
+      );
+      await request.response.close();
+    });
+    final audio = FakeAudioBridge()
+      ..onStart = (_) async => throw StateError('录音启动失败');
+    final controller = VoiceSessionController(
+      config: AppConfig(
+        baseUrl: 'http://${server.address.host}:${server.port}',
+        accessToken: 'test-token',
+        userId: '42',
+      ),
+      audio: audio,
+      wakeWordDetector: FakeWakeWordDetector(),
+    );
+    addTearDown(() async {
+      controller.dispose();
+      await audio.close();
+      await server.close(force: true);
+    });
+    Future<void> start() =>
+        controller.enableWakeWord(agentId: 'chatbot', voice: 'Cherry');
+
+    await expectLater(start(), throwsStateError);
+    expect(controller.error, '录音启动失败');
+    expect(controller.wakeWordEnabled, isFalse);
+    audio.onStart = null;
+    await start();
+    expect(controller.isWakeListening, isFalse);
+    await Future<void>.delayed(const Duration(milliseconds: 2100));
+    expect(controller.wakeWordEnabled, isFalse);
+    expect(controller.error, contains('没有返回音频'));
+  });
 }

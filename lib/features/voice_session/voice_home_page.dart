@@ -60,6 +60,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
   bool _awayFromLatest = false;
   bool _hasNewContent = false;
   bool _followScheduled = false;
+  bool _wakeCheckScheduled = false;
   bool _scrollingToStart = false;
   int _newMessageCount = 0;
   late int _lastLocationNoticeSequence;
@@ -124,7 +125,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
   void _textFocusChanged() {
     _defaultWakeAttempted = false;
     if (_textFocus.hasFocus && !widget.controller.isConnected) {
-      unawaited(widget.controller.stopVoiceInput());
+      unawaited(_suspendAudio());
     } else {
       _scheduleDefaultWake();
     }
@@ -393,11 +394,15 @@ class _VoiceHomePageState extends State<VoiceHomePage>
   }
 
   void _scheduleDefaultWake() {
+    if (_wakeCheckScheduled) return;
+    _wakeCheckScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _wakeCheckScheduled = false;
       if (mounted) {
         unawaited(_enableDefaultWakeIfReady());
       }
     });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   Future<void> _enableDefaultWakeIfReady() async {
@@ -441,6 +446,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
       _enablingDefaultWake = false;
       if (mounted) {
         setState(() {});
+        _scheduleDefaultWake();
       }
     }
   }
@@ -1228,7 +1234,12 @@ String _statusLabel(
   VoiceConnectionState state,
   VoiceCapabilities? capabilities,
 ) => switch (state) {
-  VoiceConnectionState.disconnected => capabilities == null ? '等待连接' : '随时聊一聊',
+  VoiceConnectionState.disconnected =>
+    capabilities == null
+        ? '等待连接'
+        : capabilities.wakeWord.enabled
+        ? '唤醒监听已暂停'
+        : '随时聊一聊',
   VoiceConnectionState.wakeListening => '说“小美小美”唤醒我',
   VoiceConnectionState.connecting => '正在连接',
   VoiceConnectionState.ready => '已经准备好',
@@ -1346,24 +1357,22 @@ class _VoiceControls extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                modeLabel ?? (connected ? status : '语音陪伴'),
+                modeLabel ?? status,
                 style: theme.textTheme.labelLarge?.copyWith(
                   fontWeight: FontWeight.w500,
                 ),
               ),
-              const SizedBox(height: 3),
-              Text(
-                modeLabel != null
-                    ? status
-                    : connected
-                    ? voiceName ?? '正在对话中'
-                    : '喊“小美，小美”，我在这里',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+              if (modeLabel != null || (connected && voiceName != null)) ...[
+                const SizedBox(height: 3),
+                Text(
+                  modeLabel != null ? status : voiceName!,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
+              ],
             ],
           );
           if (constraints.maxWidth < 350 &&
@@ -1757,15 +1766,17 @@ class _EmptyConversation extends StatelessWidget {
                 color: theme.colorScheme.onSurface,
               ),
             ),
-            const SizedBox(height: 7),
-            Text(
-              configured ? '喊“小美，小美”，或点下方按钮开始对话' : '配置服务后，小美会在首页默认等待你的呼唤',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                height: 1.45,
+            if (!configured) ...[
+              const SizedBox(height: 7),
+              Text(
+                '配置服务后，可在首页使用唤醒词',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  height: 1.45,
+                ),
               ),
-            ),
+            ],
             if (configured) ...[
               const SizedBox(height: 13),
               Wrap(

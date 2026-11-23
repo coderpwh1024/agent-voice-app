@@ -448,6 +448,10 @@ class VoiceSessionController extends ChangeNotifier {
   final List<Uint8List> _pendingWakeAudio = <Uint8List>[];
   int _preRollBytes = 0;
   int _wakePreRollSamples = 0;
+  int _pendingWakeBytes = 0;
+  Timer? _wakeCaptureWatchdog;
+  final Stopwatch _wakeFrameAge = Stopwatch();
+  final Stopwatch _wakeActivationTime = Stopwatch();
   AudioProcessingState? _processingState;
   final _AudioMetricsAccumulator _metrics = _AudioMetricsAccumulator();
   int _speechFrames = 0;
@@ -520,49 +524,62 @@ class VoiceSessionController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> loadCapabilities() async {
-    _setState(VoiceConnectionState.connecting);
-    try {
-      _ensureConfigured();
-      final value = await _api.capabilities();
-      if (!value.enabled) {
-        _capabilities = value;
-        throw const ApiException(503, '后端实时语音功能未启用');
-      }
-      if (value.protocolVersion != voiceProtocolVersion) {
-        throw ApiException(
-          0,
-          '协议版本不兼容：App=$voiceProtocolVersion，后端=${value.protocolVersion}',
-        );
-      }
+  Future<VoiceCapabilities> _fetchCapabilities() async {
+    _ensureConfigured();
+    final value = await _api.capabilities();
+    if (!value.enabled) {
       _capabilities = value;
-      if (!value.hasCompatibleAudioFormats) {
-        throw const ApiException(0, '后端音频格式与当前 App 不兼容，请升级 App');
-      }
-      if (!value.hasMatchingVoiceCatalog || value.voiceOptions.isEmpty) {
-        throw const ApiException(503, '当前语音模型的音色配置不可用，请检查后端配置');
-      }
-      if (_wakeArmed && !_wakeTriggered && !isConnected) {
-        await _wakeWordDetector.initialize(
-          WakeWordConfig(
-            keyword: value.wakeWord.keyword,
-            score: value.wakeWord.score,
-            threshold: value.wakeWord.threshold,
-          ),
-        );
+      throw const ApiException(503, '后端实时语音功能未启用');
+    }
+    if (value.protocolVersion != voiceProtocolVersion) {
+      throw ApiException(
+        0,
+        '协议版本不兼容：App=$voiceProtocolVersion，后端=${value.protocolVersion}',
+      );
+    }
+    if (!value.hasCompatibleAudioFormats) {
+      throw const ApiException(0, '后端音频格式与当前 App 不兼容，请升级 App');
+    }
+    if (!value.hasMatchingVoiceCatalog || value.voiceOptions.isEmpty) {
+      throw const ApiException(503, '当前语音模型的音色配置不可用，请检查后端配置');
+    }
+    return value;
+  }
+
+  Future<void> loadCapabilities() async {
+    final wasListening = isWakeListening;
+    final wakeEpoch = _wakeSetupEpoch;
+    final connectionEpoch = _connectionEpoch;
+    if (!wasListening) _setState(VoiceConnectionState.connecting);
+    try {
+      final value = await _fetchCapabilities();
+      if (_disposed || connectionEpoch != _connectionEpoch) return;
+      _capabilities = value;
+      if (wasListening && isWakeListening && wakeEpoch == _wakeSetupEpoch) {
+        if (value.wakeWord.enabled) {
+          try {
+            await _initializeWakeDetector(value.wakeWord);
+          } catch (_) {
+            if (wakeEpoch == _wakeSetupEpoch && isWakeListening) {
+              await disableWakeWord();
+            }
+            rethrow;
+          }
+        } else {
+          await disableWakeWord();
+        }
       }
       _error = null;
     } catch (error) {
       _recordError(error);
       rethrow;
     } finally {
-      if (!isConnected) {
-        if (_wakeArmed && !_wakeTriggered) _wakeWordDetector.reset();
-        _setState(
-          _wakeArmed && !_wakeTriggered
-              ? VoiceConnectionState.wakeListening
-              : VoiceConnectionState.disconnected,
-        );
+      if (!isConnected &&
+          _state == VoiceConnectionState.connecting &&
+          connectionEpoch == _connectionEpoch) {
+        _setState(VoiceConnectionState.disconnected);
+      } else if (!_disposed) {
+        notifyListeners();
       }
     }
   }
@@ -637,42 +654,90 @@ class VoiceSessionController extends ChangeNotifier {
       throw StateError('请先结束当前语音会话');
     }
     final setupEpoch = ++_wakeSetupEpoch;
-    _ensureConfigured();
-    if (_capabilities == null) {
-      await loadCapabilities();
+    try {
+      _ensureConfigured();
+      if (_capabilities == null) await loadCapabilities();
+      if (setupEpoch != _wakeSetupEpoch || _disposed) return;
+      final wake = _capabilities!.wakeWord;
+      if (!wake.enabled) throw StateError('后端未启用唤醒词能力');
+      final granted = await _audio.requestMicrophonePermission();
+      if (setupEpoch != _wakeSetupEpoch || _disposed) return;
+      if (!granted) throw StateError('没有麦克风权限，无法启用唤醒词');
+      await _initializeWakeDetector(wake);
+      if (setupEpoch != _wakeSetupEpoch || _disposed) return;
+      _wakeSubscription ??= _wakeWordDetector.detections.listen(
+        _onWakeDetected,
+        onError: _onWakeCaptureError,
+      );
+      _wakeAgentId = agentId;
+      _wakeVoice = voice;
+      _wakeThreadId = threadId;
+      _wakeArmed = true;
+      _ensureAudioSubscriptions();
+      await _startWakeCapture(setupEpoch);
+    } catch (error) {
+      if (setupEpoch == _wakeSetupEpoch && !_disposed) {
+        await disableWakeWord();
+        _recordError(error);
+      }
+      rethrow;
     }
-    if (setupEpoch != _wakeSetupEpoch || _disposed) return;
-    final wake = _capabilities!.wakeWord;
-    if (!wake.enabled) {
-      throw StateError('后端未启用唤醒词能力');
-    }
-    final granted = await _audio.requestMicrophonePermission();
-    if (setupEpoch != _wakeSetupEpoch || _disposed) return;
-    if (!granted) {
-      throw StateError('没有麦克风权限，无法启用唤醒词');
-    }
-    await _wakeWordDetector.initialize(
-      WakeWordConfig(
-        keyword: wake.keyword,
-        score: wake.score,
-        threshold: wake.threshold,
-      ),
-    );
-    if (setupEpoch != _wakeSetupEpoch || _disposed) return;
-    _wakeSubscription ??= _wakeWordDetector.detections.listen(
-      _onWakeDetected,
-      onError: _recordError,
-    );
-    _wakeWordDetector.reset();
-    _wakeAgentId = agentId;
-    _wakeVoice = voice;
-    _wakeThreadId = threadId;
-    _wakeArmed = true;
+  }
+
+  Future<void> _initializeWakeDetector(WakeWordCapability wake) =>
+      _wakeWordDetector.initialize(
+        WakeWordConfig(
+          keyword: wake.keyword,
+          score: wake.score,
+          threshold: wake.threshold,
+        ),
+      );
+
+  Future<void> _startWakeCapture(int setupEpoch) async {
+    _stopWakeWatchdog();
     _wakeTriggered = false;
-    _ensureAudioSubscriptions();
-    _processingState = await _audio.start(AudioCaptureMode.standby);
+    _wakeWordDetector.reset();
+    final processing = await _audio.start(AudioCaptureMode.standby);
     if (setupEpoch != _wakeSetupEpoch || _disposed) return;
-    _setState(VoiceConnectionState.wakeListening);
+    _processingState = processing;
+    _wakeFrameAge
+      ..reset()
+      ..start();
+    const captureTimeout = Duration(seconds: 2);
+    _wakeCaptureWatchdog = Timer.periodic(captureTimeout, (_) {
+      if (_wakeFrameAge.elapsed >= captureTimeout) {
+        _onWakeCaptureError('麦克风没有返回音频，请重试唤醒监听');
+      }
+    });
+  }
+
+  void _stopWakeWatchdog() {
+    _wakeCaptureWatchdog?.cancel();
+    _wakeCaptureWatchdog = null;
+    _wakeFrameAge.stop();
+  }
+
+  void _onWakeCaptureError(Object error) {
+    if (_disposed || !_wakeArmed || _wakeTriggered || isConnected) return;
+    unawaited(_failWakeCapture(error));
+  }
+
+  Future<void> _failWakeCapture(Object error) async {
+    _logWake('capture_failed');
+    try {
+      await disableWakeWord();
+    } catch (_) {
+      // Keep the original capture failure visible even if stop also fails.
+    }
+    if (!_disposed) _recordError(error);
+  }
+
+  void _logWake(String stage) {
+    if (kDebugMode) {
+      debugPrint(
+        'WakeWord: $stage elapsed_ms=${_wakeActivationTime.elapsedMilliseconds}',
+      );
+    }
   }
 
   Future<void> disableWakeWord() async {
@@ -680,11 +745,13 @@ class VoiceSessionController extends ChangeNotifier {
     final hadWakeAudio = _wakeArmed || _microphoneSubscription != null;
     _wakeArmed = false;
     _wakeTriggered = false;
+    _stopWakeWatchdog();
     _wakeWordDetector.reset();
     _preRoll.clear();
     _pendingWakeAudio.clear();
     _preRollBytes = 0;
     _wakePreRollSamples = 0;
+    _pendingWakeBytes = 0;
     if (!isConnected) {
       if (hadWakeAudio) {
         await _audio.stop();
@@ -705,10 +772,16 @@ class VoiceSessionController extends ChangeNotifier {
       return;
     }
     _wakeTriggered = true;
+    _stopWakeWatchdog();
+    _wakeActivationTime
+      ..reset()
+      ..start();
     _pendingWakeAudio
       ..clear()
-      ..addAll(_preRoll.map(Uint8List.fromList));
+      ..addAll(_preRoll);
     _wakePreRollSamples = _preRollBytes ~/ 2;
+    _pendingWakeBytes = 0;
+    _logWake('detected pre_roll_ms=${_wakePreRollSamples ~/ 16}');
     unawaited(
       _connectFromWake(agentId: agentId, voice: voice, threadId: _wakeThreadId),
     );
@@ -749,18 +822,22 @@ class VoiceSessionController extends ChangeNotifier {
 
     _ensureConfigured();
     _supportsLocationUpdates = false;
+    _stopWakeWatchdog();
     _setState(VoiceConnectionState.connecting);
     _error = null;
     try {
-      await loadCapabilities();
+      // Standby has already loaded and validated the settings for this hit.
+      final capabilities = wakeActivation
+          ? _capabilities!
+          : await _fetchCapabilities();
       ensureCurrent();
-      _setState(VoiceConnectionState.connecting);
-      final selectedVoice = _capabilities!.selectVoice(voice);
+      _capabilities = capabilities;
+      final selectedVoice = capabilities.selectVoice(voice);
       if (selectedVoice == null) {
         throw const ApiException(503, '当前语音模型没有可用音色');
       }
       if (inputMode != 'conversation' &&
-          !_capabilities!.inputModes.contains(inputMode)) {
+          !capabilities.inputModes.contains(inputMode)) {
         throw const ApiException(503, '当前后端不支持文字或听写模式，请更新服务');
       }
       if (inputMode != 'text') {
@@ -776,11 +853,11 @@ class VoiceSessionController extends ChangeNotifier {
         voice: selectedVoice,
         threadId: threadId,
         activation: wakeActivation ? 'wake_word' : 'tap',
-        wakeWord: wakeActivation ? _capabilities!.wakeWord.keyword : null,
+        wakeWord: wakeActivation ? capabilities.wakeWord.keyword : null,
         wakeEngine: wakeActivation ? 'sherpa-onnx-1.13.8' : null,
         preRollSamples: wakeActivation ? _wakePreRollSamples : null,
         inputMode: inputMode,
-        memoryMode: _capabilities!.localMemory
+        memoryMode: capabilities.localMemory
             ? (_usingLocalMemory ? 'local' : 'mem0')
             : null,
       );
@@ -822,20 +899,26 @@ class VoiceSessionController extends ChangeNotifier {
       await _readyCompleter!.future.timeout(const Duration(seconds: 12));
       ensureCurrent();
       if (threadId != null) unawaited(refreshExecutionState());
-      _processingState = await _audio.start(
-        inputMode == 'text'
-            ? AudioCaptureMode.playback
-            : AudioCaptureMode.conversation,
-      );
-      ensureCurrent();
       _metrics.reset();
-      _acceptLiveAudio = inputMode != 'text';
       if (wakeActivation) {
+        // Keep standby capture active while ASR confirms the phrase. Android
+        // can lose audio while rebuilding its recorder for playback/AEC.
         for (final frame in _pendingWakeAudio) {
           _sendPcm(frame);
         }
         _pendingWakeAudio.clear();
+        _preRoll.clear();
+        _preRollBytes = 0;
+        _logWake('confirming buffered_ms=${_pendingWakeBytes ~/ 32}');
+      } else {
+        _processingState = await _audio.start(
+          inputMode == 'text'
+              ? AudioCaptureMode.playback
+              : AudioCaptureMode.conversation,
+        );
+        ensureCurrent();
       }
+      _acceptLiveAudio = inputMode != 'text';
       _setState(idleState);
     } on _VoiceConnectionCancelled {
       await pendingSocket?.close();
@@ -848,6 +931,10 @@ class VoiceSessionController extends ChangeNotifier {
       }
     } catch (error) {
       if (epoch == _connectionEpoch) {
+        if (wakeActivation) {
+          _logWake('connection_failed');
+          _wakeActivationTime.stop();
+        }
         _recordError(error);
         await _teardown(sendClose: false);
       }
@@ -858,7 +945,13 @@ class VoiceSessionController extends ChangeNotifier {
   void _ensureAudioSubscriptions() {
     _microphoneSubscription ??= _audio.microphoneFrames.listen(
       _handleMicrophone,
-      onError: _recordError,
+      onError: (Object error) {
+        if (_wakeArmed && !_wakeTriggered && !isConnected) {
+          _onWakeCaptureError(error);
+        } else {
+          _recordError(error);
+        }
+      },
     );
     _playbackSubscription ??= _audio.playbackEvents.listen(
       _handlePlaybackEvent,
@@ -1427,6 +1520,21 @@ class VoiceSessionController extends ChangeNotifier {
         }
       case 'wake.accepted':
         if (!_wakeConfirmationPending) break;
+        _logWake('confirmed');
+        final epoch = _connectionEpoch;
+        try {
+          final processing = await _audio.start(AudioCaptureMode.conversation);
+          if (_disposed || epoch != _connectionEpoch) break;
+          _processingState = processing;
+        } catch (error) {
+          if (epoch == _connectionEpoch) {
+            _recordError(error);
+            unawaited(_teardown(sendClose: true));
+          }
+          break;
+        }
+        _logWake('conversation_capture_ready');
+        _wakeActivationTime.stop();
         final transcript = _pendingWakeTranscript;
         final keyword = _capabilities?.wakeWord.keyword ?? '';
         final command =
@@ -1443,9 +1551,11 @@ class VoiceSessionController extends ChangeNotifier {
         _partialTranscript = '';
         _setState(idleState);
       case 'wake.rejected':
+        _logWake('rejected');
+        _wakeActivationTime.stop();
         _pendingWakeTranscript = null;
         _wakeConfirmationPending = false;
-        _error = null;
+        _error = '已听到唤醒词，服务未能确认。请再说一次“小美小美”';
         unawaited(_teardown(sendClose: false));
       case 'approval.required':
         _approval = ApprovalPrompt(
@@ -1518,18 +1628,24 @@ class VoiceSessionController extends ChangeNotifier {
     if (bytes.isEmpty || bytes.length.isOdd) {
       return;
     }
-    final levels = _measure(bytes);
-    _metrics.add(bytes, levels);
-    if (_wakeArmed && !_acceptLiveAudio) {
-      if (!_wakeTriggered) {
-        _wakeWordDetector.addPcm(bytes);
+    if (_wakeCaptureWatchdog != null) {
+      _wakeFrameAge.reset();
+      if (!isWakeListening) {
+        _logWake('listening');
+        _setState(VoiceConnectionState.wakeListening);
       }
       _appendPreRoll(bytes);
-      if (_wakeTriggered) {
-        _pendingWakeAudio.add(Uint8List.fromList(bytes));
-      }
+      _wakeWordDetector.addPcm(bytes);
+    } else if (_wakeTriggered &&
+        !_acceptLiveAudio &&
+        _pendingWakeBytes + bytes.length <= 2500 * 32) {
+      // Keep the first words after the hit within the server's catch-up budget.
+      _pendingWakeBytes += bytes.length;
+      _pendingWakeAudio.add(Uint8List.fromList(bytes));
     }
     if (_acceptLiveAudio && isConnected) {
+      final levels = _measure(bytes);
+      _metrics.add(bytes, levels);
       _sendPcm(bytes);
       _maybeSendMetrics();
       _maybeInterrupt(levels.rmsDbfs);
@@ -1656,6 +1772,7 @@ class VoiceSessionController extends ChangeNotifier {
     if (_tearingDown) return;
     _connectionEpoch++;
     _tearingDown = true;
+    _stopWakeWatchdog();
     final dictation = _dictationCompleter;
     _dictationCompleter = null;
     if (dictation != null && !dictation.isCompleted) {
@@ -1681,7 +1798,9 @@ class VoiceSessionController extends ChangeNotifier {
       _speechFrames = 0;
       _pendingWakeTranscript = null;
       _wakeConfirmationPending = false;
+      _wakeTriggered = false;
       _pendingWakeAudio.clear();
+      _pendingWakeBytes = 0;
       _preRoll.clear();
       _preRollBytes = 0;
       _wakePreRollSamples = 0;
@@ -1705,10 +1824,13 @@ class VoiceSessionController extends ChangeNotifier {
       }
       _partialTranscript = '';
       if (_wakeArmed && !_disposed) {
-        _wakeTriggered = false;
-        _wakeWordDetector.reset();
-        _processingState = await _audio.start(AudioCaptureMode.standby);
-        _setState(VoiceConnectionState.wakeListening);
+        final wakeEpoch = _wakeSetupEpoch;
+        _setState(VoiceConnectionState.disconnected);
+        try {
+          await _startWakeCapture(wakeEpoch);
+        } catch (error) {
+          if (wakeEpoch == _wakeSetupEpoch) await _failWakeCapture(error);
+        }
       } else {
         await _cancelAudioSubscriptions();
         _setState(VoiceConnectionState.disconnected);
