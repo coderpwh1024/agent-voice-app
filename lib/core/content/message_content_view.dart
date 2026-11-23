@@ -8,6 +8,13 @@ import '../theme/app_theme.dart';
 import 'message_content.dart';
 import 'message_image_loader.dart';
 
+ImageProvider _messageImage(Uint8List bytes) => ResizeImage(
+  MemoryImage(bytes),
+  width: 1280,
+  height: 1280,
+  policy: ResizeImagePolicy.fit,
+);
+
 Future<void> openMessageLink(BuildContext context, Uri uri) async {
   try {
     if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return;
@@ -213,6 +220,7 @@ class _MessageImageTileState extends State<MessageImageTile> {
         mainAxisSize: MainAxisSize.min,
         children: [
           FutureBuilder<Uint8List>(
+            key: ObjectKey(_image),
             future: _image,
             builder: (context, snapshot) {
               if (snapshot.hasError) {
@@ -261,49 +269,58 @@ class _MessageImageTileState extends State<MessageImageTile> {
                   child: Center(
                     child: Semantics(
                       label: '正在加载图片',
-                      child: const SizedBox.square(
-                        dimension: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
+                      child: MediaQuery.disableAnimationsOf(context)
+                          ? Icon(
+                              Icons.hourglass_top_rounded,
+                              color: p.accentInk,
+                            )
+                          : const SizedBox.square(
+                              dimension: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
                     ),
                   ),
                 );
               }
-              return Semantics(
-                button: true,
-                label: '放大图片：${widget.resource.label}',
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(7),
-                  onTap: () => Navigator.of(context).push<void>(
-                    MaterialPageRoute(
-                      builder: (_) => _MessageImagePage(
-                        resource: widget.resource,
-                        bytes: bytes,
-                      ),
-                    ),
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(7),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: 48,
+                    maxHeight: String.fromCharCodes(bytes.take(3)) == 'GIF'
+                        ? 144
+                        : 240,
                   ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(7),
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        minHeight: 48,
-                        maxHeight: String.fromCharCodes(bytes.take(3)) == 'GIF'
-                            ? 144
-                            : 240,
-                      ),
-                      child: TickerMode(
-                        enabled: !MediaQuery.disableAnimationsOf(context),
-                        child: Image.memory(
-                          bytes,
-                          fit: BoxFit.contain,
-                          alignment: Alignment.centerLeft,
-                          cacheWidth: 768,
-                          semanticLabel: widget.resource.label,
-                          errorBuilder: (_, _, _) => const Padding(
-                            padding: EdgeInsets.all(16),
-                            child: Text('无法预览此图片，请打开链接查看'),
+                  child: TickerMode(
+                    enabled: !MediaQuery.disableAnimationsOf(context),
+                    child: Image(
+                      image: _messageImage(bytes),
+                      fit: BoxFit.contain,
+                      alignment: Alignment.centerLeft,
+                      semanticLabel: widget.resource.label,
+                      frameBuilder: (context, image, frame, synchronous) {
+                        if (!synchronous && frame == null) {
+                          return const Center(child: Text('正在加载图片…'));
+                        }
+                        return Semantics(
+                          button: true,
+                          label: '放大图片：${widget.resource.label}',
+                          child: InkWell(
+                            onTap: () => Navigator.of(context).push<void>(
+                              MaterialPageRoute(
+                                builder: (_) => _MessageImagePage(
+                                  resource: widget.resource,
+                                  bytes: bytes,
+                                ),
+                              ),
+                            ),
+                            child: image,
                           ),
-                        ),
+                        );
+                      },
+                      errorBuilder: (_, _, _) => const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Text('无法预览此图片，请打开链接查看'),
                       ),
                     ),
                   ),
@@ -370,17 +387,26 @@ class _MessageImagePage extends StatelessWidget {
           children: [
             Expanded(
               child: InteractiveViewer(
-                minScale: .5,
                 maxScale: 5,
-                child: Center(
-                  child: TickerMode(
-                    enabled: !MediaQuery.disableAnimationsOf(context),
-                    child: Image.memory(
-                      bytes,
-                      cacheWidth: 1600,
-                      fit: BoxFit.contain,
-                      semanticLabel: resource.label,
-                      errorBuilder: (_, _, _) => const Text('无法预览此图片，请打开原图查看'),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Center(
+                    child: TickerMode(
+                      enabled: !MediaQuery.disableAnimationsOf(context),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image(
+                          image: _messageImage(bytes),
+                          fit: BoxFit.contain,
+                          semanticLabel: resource.label,
+                          frameBuilder: (_, image, frame, synchronous) =>
+                              synchronous || frame != null
+                              ? image
+                              : const Text('正在加载图片…'),
+                          errorBuilder: (_, _, _) =>
+                              const Text('无法预览此图片，请打开原图查看'),
+                        ),
+                      ),
                     ),
                   ),
                 ),

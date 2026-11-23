@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:agent_voice_app/core/content/message_content_view.dart';
@@ -40,8 +41,10 @@ Future<void> mount(
     MaterialApp(
       theme: AppTheme.build(dark ? Brightness.dark : Brightness.light),
       builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(context)
-            .copyWith(textScaler: TextScaler.linear(scale)),
+        data: MediaQuery.of(context).copyWith(
+          textScaler: TextScaler.linear(scale),
+          disableAnimations: true,
+        ),
         child: child!,
       ),
       home: Scaffold(
@@ -130,7 +133,14 @@ void main() {
       final overrides = FixtureHttp();
       await HttpOverrides.runWithHttpOverrides(() async {
         var requests = 0;
+        var missingRequests = 0;
         var authorizationLeaked = false;
+        final firstFailure = (await tester.runAsync(
+          () async => Completer<void>(),
+        ))!;
+        final retryFailure = (await tester.runAsync(
+          () async => Completer<void>(),
+        ))!;
         final server = (await tester.runAsync(() async {
           final value = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
           value.listen((r) async {
@@ -138,10 +148,13 @@ void main() {
             authorizationLeaked |= r.headers.value('authorization') != null;
             if (r.uri.path == '/missing.png') {
               r.response.statusCode = 404;
+              final done = ++missingRequests == 1 ? firstFailure : retryFailure;
+              await r.response.close();
+              done.complete();
             } else {
               r.response.add(messagePhoto());
+              await r.response.close();
             }
-            await r.response.close();
           });
           return value;
         }))!;
@@ -152,26 +165,49 @@ void main() {
           await Future<void>.delayed(const Duration(milliseconds: 100));
         });
         await tester.pumpAndSettle();
-        expect(find.byType(Image), findsOneWidget);
-        await tester.tap(find.byType(Image));
+        final image = find.byType(Image);
+        final provider = tester.widget<Image>(image).image;
+        await tester.runAsync(() async {
+          await precacheImage(
+            provider,
+            tester.element(image),
+          ).timeout(const Duration(seconds: 5));
+        });
+        await tester.pumpAndSettle();
+        await tester.tap(image);
         await tester.pumpAndSettle();
         expect(find.byType(InteractiveViewer), findsOneWidget);
         expect(find.text('图片预览'), findsOneWidget);
+        expect(
+          await tester
+              .widget<Image>(image)
+              .image
+              .obtainKey(ImageConfiguration.empty),
+          await provider.obtainKey(ImageConfiguration.empty),
+        );
         await tester.tap(find.text('复制链接'));
         await tester.pump();
         expect((await Clipboard.getData('text/plain'))!.text, url);
         await tester.pageBack();
         await tester.pumpAndSettle();
+        final failed = find.text('图片暂不可用，仍可打开链接查看');
         await tester.runAsync(() async {
           await mount(tester, 'http://127.0.0.1:${server.port}/missing.png');
-          await Future<void>.delayed(const Duration(milliseconds: 100));
+          await firstFailure.future.timeout(const Duration(seconds: 5));
+          final deadline = DateTime.now().add(const Duration(seconds: 5));
+          do {
+            await tester.pump();
+            if (failed.evaluate().isNotEmpty) break;
+            await Future<void>.delayed(const Duration(milliseconds: 20));
+          } while (DateTime.now().isBefore(deadline));
         });
         await tester.pumpAndSettle();
-        expect(find.text('图片暂不可用，仍可打开链接查看'), findsOneWidget);
+        expect(failed, findsOneWidget);
         final before = requests;
         await tester.runAsync(() async {
           await tester.tap(find.text('重新加载'));
-          await Future<void>.delayed(const Duration(milliseconds: 100));
+          await tester.pump();
+          await retryFailure.future.timeout(const Duration(seconds: 5));
         });
         await tester.pumpAndSettle();
         expect(requests, before + 1);

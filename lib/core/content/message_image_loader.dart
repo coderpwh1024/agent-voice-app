@@ -4,7 +4,10 @@ import 'dart:typed_data';
 import 'message_content.dart';
 
 class MessageImageLoader {
+  MessageImageLoader({this.byteLimit = maxBytes});
+
   static const maxBytes = 8 * 1024 * 1024;
+  final int byteLimit;
   HttpClient? _client;
 
   Future<Uint8List> load(Uri uri) async {
@@ -38,13 +41,16 @@ class MessageImageLoader {
         uri = next;
         continue;
       }
-      if (response.statusCode != 200 || response.contentLength > maxBytes) {
-        throw const FormatException('图片暂不可用或超过 8 MB');
+      if (response.statusCode != 200) {
+        throw const FormatException('图片暂不可用');
+      }
+      if (response.contentLength > byteLimit) {
+        throw const FormatException('图片超过大小限制');
       }
       final builder = BytesBuilder(copy: false);
       await for (final chunk in response) {
-        if (builder.length + chunk.length > maxBytes) {
-          throw const FormatException('图片超过 8 MB');
+        if (builder.length + chunk.length > byteLimit) {
+          throw const FormatException('图片超过大小限制');
         }
         builder.add(chunk);
       }
