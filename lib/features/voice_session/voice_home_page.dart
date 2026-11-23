@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../../core/api/api_models.dart';
+import '../../core/api/image_task.dart';
 import '../../core/content/message_content_view.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/editorial_widgets.dart';
@@ -13,6 +14,9 @@ import '../../core/audio/audio_bridge.dart';
 import '../conversations/personal_library_page.dart';
 import '../execution/execution_progress.dart';
 import '../conversations/chat_record_widgets.dart';
+import '../images/image_detail_page.dart';
+import '../images/image_message_card.dart';
+import '../images/image_studio_page.dart';
 import '../profile/profile_avatar.dart';
 import '../videos/video_studio_page.dart';
 import '../videos/video_message_card.dart';
@@ -540,17 +544,31 @@ class _VoiceHomePageState extends State<VoiceHomePage>
     }
   }
 
-  Future<void> _openVideos() async {
-    if (_browsingHistory || widget.controller.isConnected) return;
+  Future<void> _openStudio({required bool images}) async {
+    if (widget.controller.isConnected) return;
+    final config = widget.controller.config;
+    await _openVisualPage(
+      (_) => images
+          ? ImageStudioPage(config: config)
+          : VideoStudioPage(config: config),
+    );
+  }
+
+  Future<void> _openConversationImage(ImageTask image) async {
+    final config = widget.controller.config;
+    await _openVisualPage(
+      (_) => ImageDetailPage(config: config, id: image.id, initialTask: image),
+    );
+  }
+
+  Future<void> _openVisualPage(WidgetBuilder builder) async {
+    if (_browsingHistory) return;
     _browsingHistory = true;
     try {
       await widget.controller.disableWakeWord();
       if (!mounted) return;
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute(
-          builder: (_) => VideoStudioPage(config: widget.controller.config),
-        ),
-      );
+      await Navigator.of(context)
+          .push<void>(MaterialPageRoute<void>(builder: builder));
     } finally {
       _browsingHistory = false;
       if (mounted) {
@@ -780,11 +798,30 @@ class _VoiceHomePageState extends State<VoiceHomePage>
           ),
         ),
         actions: [
-          IconButton(
-            tooltip: '视频工作室',
-            onPressed: connected ? null : _openVideos,
-            icon: const Icon(Icons.movie_creation_outlined),
-          ),
+          if (MediaQuery.sizeOf(context).width < 380 ||
+              MediaQuery.textScalerOf(context).scale(16) >= 24)
+            PopupMenuButton<bool>(
+              tooltip: '创作工具',
+              enabled: !connected,
+              icon: const Icon(Icons.dashboard_customize_outlined),
+              onSelected: (images) => _openStudio(images: images),
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: true, child: Text('图像工作室')),
+                PopupMenuItem(value: false, child: Text('视频工作室')),
+              ],
+            )
+          else ...[
+            IconButton(
+              tooltip: '图像工作室',
+              onPressed: connected ? null : () => _openStudio(images: true),
+              icon: const Icon(Icons.photo_library_outlined),
+            ),
+            IconButton(
+              tooltip: '视频工作室',
+              onPressed: connected ? null : () => _openStudio(images: false),
+              icon: const Icon(Icons.movie_creation_outlined),
+            ),
+          ],
           IconButton(
             tooltip: '对话偏好',
             onPressed: _showPreferences,
@@ -997,6 +1034,8 @@ class _VoiceHomePageState extends State<VoiceHomePage>
                                               config: controller.config,
                                               onOpenVideo:
                                                   _openConversationVideo,
+                                              onOpenImage:
+                                                  _openConversationImage,
                                               onConfirm:
                                                   controller.canConfirmMemory(
                                                     messages[index]
@@ -1786,6 +1825,7 @@ class _MessageBubble extends StatelessWidget {
     required this.entry,
     required this.config,
     required this.onOpenVideo,
+    required this.onOpenImage,
     this.onConfirm,
     this.onRefresh,
     this.refreshError,
@@ -1797,6 +1837,7 @@ class _MessageBubble extends StatelessWidget {
   final String? refreshError;
   final AppConfig config;
   final Future<void> Function(VideoReference video, bool play) onOpenVideo;
+  final Future<void> Function(ImageTask image) onOpenImage;
 
   @override
   Widget build(BuildContext context) {
@@ -1837,7 +1878,9 @@ class _MessageBubble extends StatelessWidget {
                 ),
               MessageContentView(
                 text: entry.text.isEmpty
-                    ? (entry.video == null && entry.videoResults == null
+                    ? (entry.imageResults != null || entry.image != null
+                          ? '图像结果'
+                          : entry.video == null && entry.videoResults == null
                           ? '…'
                           : '这是为你找到的视频。')
                     : entry.text,
@@ -1861,6 +1904,18 @@ class _MessageBubble extends StatelessWidget {
                   video: entry.video!,
                   config: config,
                   onOpen: (play) => onOpenVideo(entry.video!, play),
+                ),
+              if (entry.imageResults case final results? when !human)
+                ImageMessageGallery(
+                  images: results.items,
+                  config: config,
+                  onOpen: onOpenImage,
+                )
+              else if (entry.image case final image? when !human)
+                ImageMessageGallery(
+                  images: [image],
+                  config: config,
+                  onOpen: onOpenImage,
                 ),
             ],
           ),

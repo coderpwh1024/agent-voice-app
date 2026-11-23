@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_models.dart';
 import '../../core/api/execution_models.dart';
+import '../../core/api/image_task.dart';
 import '../../core/api/video_reference.dart';
 import '../../core/api/voice_protocol.dart';
 import '../../core/api/voice_socket.dart';
@@ -38,6 +39,8 @@ class ConversationEntry {
     this.execution,
     this.video,
     this.videoResults,
+    this.image,
+    this.imageResults,
     this.isStreaming = false,
   });
 
@@ -48,6 +51,8 @@ class ConversationEntry {
   final ExecutionSnapshot? execution;
   final VideoReference? video;
   final VideoResultPage? videoResults;
+  final ImageTask? image;
+  final ImageResultPage? imageResults;
   final bool isStreaming;
 
   ConversationEntry copyWith({
@@ -55,6 +60,8 @@ class ConversationEntry {
     ExecutionSnapshot? execution,
     VideoReference? video,
     VideoResultPage? videoResults,
+    ImageTask? image,
+    ImageResultPage? imageResults,
     bool? isStreaming,
   }) => ConversationEntry(
     role: role,
@@ -64,6 +71,8 @@ class ConversationEntry {
     execution: execution ?? this.execution,
     video: video ?? this.video,
     videoResults: videoResults ?? this.videoResults,
+    image: image ?? this.image,
+    imageResults: imageResults ?? this.imageResults,
     isStreaming: isStreaming ?? this.isStreaming,
   );
 }
@@ -288,6 +297,8 @@ class VoiceSessionController extends ChangeNotifier {
             : null,
         video: existing.video == null ? video : null,
         videoResults: existing.videoResults == null ? results : null,
+        image: execution.image,
+        imageResults: execution.imageResults,
         isStreaming: existing.isStreaming,
       );
     } else {
@@ -300,6 +311,8 @@ class VoiceSessionController extends ChangeNotifier {
           execution: execution,
           video: video,
           videoResults: results,
+          image: execution.image,
+          imageResults: execution.imageResults,
         ),
       );
       if (id != null) _assistantIndexes[id] = target;
@@ -1110,6 +1123,8 @@ class VoiceSessionController extends ChangeNotifier {
             execution: item.execution,
             video: item.video,
             videoResults: item.videoResults,
+            image: item.execution?.image,
+            imageResults: item.execution?.imageResults,
           ),
         ),
       );
@@ -1314,12 +1329,25 @@ class VoiceSessionController extends ChangeNotifier {
             ? VideoReference.tryParse(data['video'])
             : null;
         final videoResults = VideoResultPage.tryParse(data);
-        if (video == null && videoResults == null) break;
+        final image = data['type'] == 'image.task'
+            ? ImageTask.tryParse(data['image'])
+            : null;
+        final imageResults = data['type'] == 'image.list'
+            ? ImageResultPage.tryParse(data)
+            : null;
+        if (video == null &&
+            videoResults == null &&
+            image == null &&
+            imageResults == null) {
+          break;
+        }
         final index = _assistantIndexes[responseId];
         if (index != null && index < _messages.length) {
           _messages[index] = _messages[index].copyWith(
             video: video,
             videoResults: videoResults,
+            image: image,
+            imageResults: imageResults,
           );
         } else {
           _assistantIndexes[responseId] = _messages.length;
@@ -1330,6 +1358,8 @@ class VoiceSessionController extends ChangeNotifier {
               responseId: responseId,
               video: video,
               videoResults: videoResults,
+              image: image,
+              imageResults: imageResults,
             ),
           );
         }

@@ -7,6 +7,7 @@ import '../../core/api/api_models.dart';
 import '../../core/api/chat_record_models.dart';
 import '../../core/config/app_config.dart';
 import '../../core/content/message_content_view.dart';
+import '../images/image_message_card.dart';
 import '../videos/video_message_card.dart';
 import 'chat_record_widgets.dart';
 
@@ -300,6 +301,11 @@ class _MessageBubble extends StatelessWidget {
                 VideoResultList(results: message.videoResults!, config: config)
               else if (!human && message.video != null)
                 VideoMessageCard(video: message.video!, config: config),
+              if (message.execution?.imageResults case final results?
+                  when !human)
+                ImageMessageGallery(images: results.items, config: config)
+              else if (message.execution?.image case final image? when !human)
+                ImageMessageGallery(images: [image], config: config),
             ],
           ),
         ),
@@ -349,6 +355,11 @@ class _MessageBubble extends StatelessWidget {
                 VideoResultList(results: message.videoResults!, config: config)
               else if (!human && message.video != null)
                 VideoMessageCard(video: message.video!, config: config),
+              if (message.execution?.imageResults case final results?
+                  when !human)
+                ImageMessageGallery(images: results.items, config: config)
+              else if (message.execution?.image case final image? when !human)
+                ImageMessageGallery(images: [image], config: config),
               if (message.content.trim().isNotEmpty &&
                   message.toolNames.isNotEmpty) ...[
                 const SizedBox(height: 8),

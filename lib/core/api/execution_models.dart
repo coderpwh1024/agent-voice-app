@@ -1,3 +1,5 @@
+import 'image_task.dart';
+
 class ExecutionStep {
   const ExecutionStep({
     required this.id,
@@ -67,6 +69,8 @@ class ExecutionSnapshot {
     this.confirmation,
     this.text = '',
     this.video,
+    this.image,
+    this.imageResults,
   });
   static const statuses = {
     'running',
@@ -84,6 +88,8 @@ class ExecutionSnapshot {
   final List<ExecutionStep> steps;
   final ExecutionConfirmation? confirmation;
   final Object? video;
+  final ImageTask? image;
+  final ImageResultPage? imageResults;
   bool get isRunning => status == 'running';
   bool get needsAttention =>
       steps.any((step) => step.needsAttention) ||
@@ -137,6 +143,8 @@ class ExecutionSnapshot {
       confirmation: ExecutionConfirmation.tryParse(value['confirmation']),
       text: value['text'] is String ? value['text'] as String : '',
       video: value['video'],
+      image: ImageTask.tryParse(value['image']),
+      imageResults: ImageResultPage.tryParse(value['image_results']),
     );
   }
 }
