@@ -1889,7 +1889,7 @@ class _MessageBubble extends StatelessWidget {
                 ),
               MessageContentView(
                 text: entry.text.isEmpty
-                    ? (entry.imageResults != null || entry.image != null
+                    ? (entry.images.isNotEmpty
                           ? '图像结果'
                           : entry.video == null && entry.videoResults == null
                           ? '…'
@@ -1916,15 +1916,9 @@ class _MessageBubble extends StatelessWidget {
                   config: config,
                   onOpen: (play) => onOpenVideo(entry.video!, play),
                 ),
-              if (entry.imageResults case final results? when !human)
+              if (!human && entry.images.isNotEmpty)
                 ImageMessageGallery(
-                  images: results.items,
-                  config: config,
-                  onOpen: onOpenImage,
-                )
-              else if (entry.image case final image? when !human)
-                ImageMessageGallery(
-                  images: [image],
+                  images: entry.images,
                   config: config,
                   onOpen: onOpenImage,
                 ),

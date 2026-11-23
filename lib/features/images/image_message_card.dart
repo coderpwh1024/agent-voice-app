@@ -81,6 +81,10 @@ class ImageMessageCard extends StatelessWidget {
     final palette = AppPalette(context);
     final theme = Theme.of(context);
     final uri = image.resultUri;
+    final createdAt = image.createdAt?.toLocal();
+    final captionStyle = theme.textTheme.bodySmall?.copyWith(
+      color: palette.muted,
+    );
     return Material(
       color: palette.background,
       shape: RoundedRectangleBorder(
@@ -103,7 +107,7 @@ class ImageMessageCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (uri != null)
+            if (uri != null || compact)
               AspectRatio(
                 aspectRatio: _aspectRatio,
                 child: ColoredBox(
@@ -131,11 +135,17 @@ class ImageMessageCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 4),
-                        Text(
-                          '#${image.id}',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: palette.muted,
-                          ),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 2,
+                          children: [
+                            Text('#${image.id}', style: captionStyle),
+                            if (createdAt != null)
+                              Text(
+                                '${createdAt.month}月${createdAt.day}日',
+                                style: captionStyle,
+                              ),
+                          ],
                         ),
                         if (uri == null) ...[
                           const SizedBox(height: 4),

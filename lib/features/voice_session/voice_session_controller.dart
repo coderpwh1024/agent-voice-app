@@ -55,6 +55,8 @@ class ConversationEntry {
   final ImageResultPage? imageResults;
   final bool isStreaming;
 
+  List<ImageTask> get images => imageResults?.items ?? [?image];
+
   ConversationEntry copyWith({
     String? text,
     ExecutionSnapshot? execution,
@@ -141,6 +143,8 @@ class VoiceSessionController extends ChangeNotifier {
   int _recoveryEpoch = 0;
   String? _recoveryThread, _recoveryAgent;
   final Map<int, int> _videoPolls = {};
+  final Map<int, int> _imagePolls = {};
+  final Map<int, ImageTask> _refreshedImages = {};
   final Set<String> _submittedConfirmations = {};
   String? executionRefreshError;
   int _refreshFailures = 0;
@@ -288,6 +292,8 @@ class VoiceSessionController extends ChangeNotifier {
     }
     final video = VideoReference.tryParse(execution.video);
     final results = VideoResultPage.tryParse(execution.video);
+    final image = _currentImage(execution.image);
+    final imageResults = _currentImageResults(execution.imageResults);
     if (index >= 0) {
       if (id != null) _assistantIndexes[id] = index;
       _messages[index] = existing!.copyWith(
@@ -297,8 +303,8 @@ class VoiceSessionController extends ChangeNotifier {
             : null,
         video: existing.video == null ? video : null,
         videoResults: existing.videoResults == null ? results : null,
-        image: execution.image,
-        imageResults: execution.imageResults,
+        image: image,
+        imageResults: imageResults,
         isStreaming: existing.isStreaming,
       );
     } else {
@@ -311,11 +317,47 @@ class VoiceSessionController extends ChangeNotifier {
           execution: execution,
           video: video,
           videoResults: results,
-          image: execution.image,
-          imageResults: execution.imageResults,
+          image: image,
+          imageResults: imageResults,
         ),
       );
       if (id != null) _assistantIndexes[id] = target;
+    }
+  }
+
+  ImageTask? _currentImage(ImageTask? task) =>
+      task != null && task.status.isActive
+      ? _refreshedImages[task.id] ?? task
+      : task;
+
+  ImageResultPage? _currentImageResults(ImageResultPage? results) {
+    if (results == null || _refreshedImages.isEmpty) return results;
+    return ImageResultPage(
+      items: List.unmodifiable(
+        results.items.map((task) => _currentImage(task)!),
+      ),
+      total: results.total,
+    );
+  }
+
+  Iterable<int> get _pendingImageIds => _messages.reversed
+      .expand((item) => item.images)
+      .where(
+        (task) => task.status.isActive && (_imagePolls[task.id] ?? 0) < 120,
+      )
+      .map((task) => task.id)
+      .toSet();
+
+  Future<ImageTask?> _fetchImage(int id) async {
+    _imagePolls[id] = (_imagePolls[id] ?? 0) + 1;
+    try {
+      final data = await _api
+          .requestJson('GET', '/images/$id')
+          .timeout(const Duration(seconds: 20));
+      final task = ImageTask.tryParse(data);
+      return task?.id == id ? task : null;
+    } on Exception {
+      return null;
     }
   }
 
@@ -337,7 +379,9 @@ class VoiceSessionController extends ChangeNotifier {
               ) ==
               true,
     );
-    if (pending || (executionRefreshError != null && _refreshFailures < 6)) {
+    if (pending ||
+        _pendingImageIds.isNotEmpty ||
+        (executionRefreshError != null && _refreshFailures < 6)) {
       _backgroundTimer = Timer(
         const Duration(seconds: 10),
         () => unawaited(refreshExecutionState()),
@@ -348,6 +392,7 @@ class VoiceSessionController extends ChangeNotifier {
   Future<void> refreshExecutionState({bool reset = false}) async {
     if (reset) {
       _videoPolls.clear();
+      _imagePolls.clear();
       _refreshFailures = 0;
     }
     final thread = _recoveryThread,
@@ -374,6 +419,23 @@ class VoiceSessionController extends ChangeNotifier {
         if (_disposed || !_backgroundActive || epoch != _recoveryEpoch) return;
         _refreshFailures++;
         executionRefreshError = '执行状态暂未同步，可稍后刷新核实';
+      }
+      final pendingImages = _pendingImageIds.take(6);
+      if (pendingImages.isNotEmpty) {
+        final refreshed = await Future.wait(pendingImages.map(_fetchImage));
+        if (_disposed || !_backgroundActive || epoch != _recoveryEpoch) return;
+        for (final task in refreshed.whereType<ImageTask>()) {
+          _refreshedImages[task.id] = task;
+        }
+        for (var index = 0; index < _messages.length; index++) {
+          final item = _messages[index];
+          if (item.images.isEmpty) continue;
+          _messages[index] = item.copyWith(
+            image: _currentImage(item.image),
+            imageResults: _currentImageResults(item.imageResults),
+          );
+        }
+        notifyListeners();
       }
       final videos = <int, VideoReference>{};
       for (final item in _messages) {
@@ -866,6 +928,8 @@ class VoiceSessionController extends ChangeNotifier {
       if (_recoveryThread != _session!.threadId) {
         _recoveryEpoch++;
         _videoPolls.clear();
+        _imagePolls.clear();
+        _refreshedImages.clear();
       }
       _recoveryThread = _session!.threadId;
       _recoveryAgent = _session!.agentId;
@@ -1178,6 +1242,8 @@ class VoiceSessionController extends ChangeNotifier {
     _recoveryThread = null;
     _recoveryAgent = null;
     _videoPolls.clear();
+    _imagePolls.clear();
+    _refreshedImages.clear();
     _submittedConfirmations.clear();
     executionRefreshError = null;
     _refreshFailures = 0;
@@ -1202,6 +1268,10 @@ class VoiceSessionController extends ChangeNotifier {
     _pendingVoiceInput = null;
     _assistantIndexes.clear();
     _submittedConfirmations.clear();
+    if (_recoveryThread != threadId) {
+      _imagePolls.clear();
+      _refreshedImages.clear();
+    }
     _recoveryThread = threadId;
     _recoveryAgent = agentId;
     _messages
@@ -1216,8 +1286,8 @@ class VoiceSessionController extends ChangeNotifier {
             execution: item.execution,
             video: item.video,
             videoResults: item.videoResults,
-            image: item.execution?.image,
-            imageResults: item.execution?.imageResults,
+            image: _currentImage(item.execution?.image),
+            imageResults: _currentImageResults(item.execution?.imageResults),
           ),
         ),
       );
@@ -1423,10 +1493,10 @@ class VoiceSessionController extends ChangeNotifier {
             : null;
         final videoResults = VideoResultPage.tryParse(data);
         final image = data['type'] == 'image.task'
-            ? ImageTask.tryParse(data['image'])
+            ? _currentImage(ImageTask.tryParse(data['image']))
             : null;
         final imageResults = data['type'] == 'image.list'
-            ? ImageResultPage.tryParse(data)
+            ? _currentImageResults(ImageResultPage.tryParse(data))
             : null;
         if (video == null &&
             videoResults == null &&

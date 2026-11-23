@@ -47,7 +47,7 @@ void main() {
   }
 
   test(
-    'image task events survive text updates, cancellation and history',
+    'image results survive text updates and history and refresh shared tasks once',
     () => HttpOverrides.runWithHttpOverrides(() async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       final audio = FakeAudioBridge();
@@ -87,6 +87,14 @@ void main() {
         'steps': [],
         'image': image,
       };
+      final listExecution = {
+        ...execution,
+        'run_id': 'run-list',
+        'message_id': 'msg-list',
+        'image': null,
+        'image_results': imageResults,
+      };
+      var imageReads = 0;
       WebSocket? socket;
       server.listen((request) async {
         if (WebSocketTransformer.isUpgradeRequest(request)) {
@@ -104,6 +112,7 @@ void main() {
           });
           return;
         }
+        if (request.uri.path == '/images/31') imageReads++;
         final Object data = switch (request.uri.path) {
           '/voice/capabilities' => {
             'enabled': true,
@@ -118,6 +127,18 @@ void main() {
             'voice': 'Cherry',
             'expires_at': '2099-01-01T00:00:00Z',
           },
+          '/images/31' => {
+            ...image,
+            'status': 'SUCCEEDED',
+            'image_url': 'https://example.test/31.png',
+            'create_time': '2026-11-23T10:00:00Z',
+          },
+          final path when path.endsWith('/executions') => {
+            'executions': [
+              {...execution, 'response_id': 'reply-1'},
+              {...listExecution, 'response_id': 'reply-list'},
+            ],
+          },
           final path when path.endsWith('/history') => {
             'messages': [
               {
@@ -128,15 +149,7 @@ void main() {
               {
                 'type': 'ai',
                 'content': '历史查询结果',
-                'response_metadata': {
-                  'execution': {
-                    ...execution,
-                    'run_id': 'run-list',
-                    'message_id': 'msg-list',
-                    'image': null,
-                    'image_results': imageResults,
-                  },
-                },
+                'response_metadata': {'execution': listExecution},
               },
             ],
           },
@@ -184,15 +197,7 @@ void main() {
       send('agent.custom', 'reply-list', {
         'data': {'type': 'image.list', 'items': [], 'total': 0},
       });
-      send('agent.custom', 'reply-list', {
-        'data': {
-          ...execution,
-          'run_id': 'run-list',
-          'message_id': 'msg-list',
-          'image': null,
-          'image_results': imageResults,
-        },
-      });
+      send('agent.custom', 'reply-list', {'data': listExecution});
       send('text.delta', 'reply-list', {'text': '找到 5 张图片。'});
       await waitUntil(() => controller.messages.last.text == '找到 5 张图片。');
       expect(
@@ -201,12 +206,33 @@ void main() {
       );
       expect(controller.messages.last.imageResults?.total, 5);
 
+      await controller.refreshExecutionState();
+      expect(imageReads, 1);
+      final expectedUri = Uri.parse('https://example.test/31.png');
+      expect(controller.messages.first.image?.resultUri, expectedUri);
+      expect(
+        controller.messages.last.imageResults?.items.last.resultUri,
+        expectedUri,
+      );
+      expect(
+        controller.messages.last.imageResults?.items.last.createdAt,
+        DateTime.utc(2026, 11, 23, 10),
+      );
+
+      await controller.refreshExecutionState();
+      expect(imageReads, 1);
+      expect(controller.messages.first.image?.resultUri, expectedUri);
+
       await controller.disconnect();
       await controller.loadHistory('chatbot', 'thread-1');
       expect(controller.messages.first.image?.id, 31);
       expect(
         controller.messages.last.imageResults?.items.map((image) => image.id),
         [33, 31],
+      );
+      expect(
+        controller.messages.last.imageResults?.items.last.resultUri,
+        expectedUri,
       );
     }, _GalleryHttpOverrides()),
   );
@@ -240,7 +266,7 @@ void main() {
             controller.entries.add(
               ConversationEntry(
                 role: 'ai',
-                text: '找到 2 张图片。可以告诉我图片编号，我会读出详情。',
+                text: '没有找到符合条件的图片。最近 3 天有 2 张图片。',
                 imageResults: ImageResultPage(
                   items: [
                     for (final (id, title) in [(33, '海边的远山'), (31, '山间的蓝色小船')])
@@ -248,6 +274,7 @@ void main() {
                         id: id,
                         title: title,
                         size: '1024*768',
+                        createdAt: DateTime(2026, 11, 23),
                         status: ImageTaskStatus.succeeded,
                         imageUri: Uri.http(
                           '127.0.0.1:${server.port}',
@@ -279,6 +306,7 @@ void main() {
         await tester.pumpAndSettle();
         final cards = find.byType(ImageMessageCard);
         expect(downloaded, unorderedEquals(['/33.bmp', '/31.bmp']));
+        expect(find.text('11月23日'), findsNWidgets(2));
         expect(
           tester
               .widgetList<RawImage>(
@@ -304,6 +332,39 @@ void main() {
           tester,
           wide ? 'voice-image-gallery' : 'voice-image-gallery-large-dark',
         );
+        if (wide) {
+          final result = controller.entries.single;
+          final finished = result.images.first;
+          controller.entries[0] = result.copyWith(
+            imageResults: ImageResultPage(
+              items: [
+                finished,
+                const ImageTask(
+                  id: 31,
+                  status: ImageTaskStatus.running,
+                  title: '山间的蓝色小船',
+                ),
+              ],
+              total: 2,
+            ),
+          );
+          controller.redraw();
+          await tester.pump();
+          final previews = find.byType(ImagePreview);
+          expect(tester.getSize(previews.first), tester.getSize(previews.last));
+          expect(find.text('生成中'), findsOneWidget);
+          await captureInputPreview(tester, 'voice-image-gallery-pending');
+
+          controller.entries[0] = ConversationEntry(
+            role: 'ai',
+            text: '图片已保存。',
+            image: finished,
+          );
+          controller.redraw();
+          await tester.pumpAndSettle();
+          expect(cards, findsOneWidget);
+          expect(tester.widget<ImagePreview>(previews).fit, BoxFit.contain);
+        }
       },
     );
   }
