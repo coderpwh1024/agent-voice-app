@@ -8,11 +8,9 @@ import '../../core/theme/app_theme.dart';
 import '../../core/theme/editorial_widgets.dart';
 import 'data/image_api.dart';
 import 'data/image_asset_picker.dart';
-import 'data/image_loop_models.dart';
 import 'data/image_models.dart';
 import 'image_create_page.dart';
 import 'image_detail_page.dart';
-import 'image_loop_detail_page.dart';
 import 'image_widgets.dart';
 
 class ImageStudioPage extends StatefulWidget {
@@ -34,10 +32,9 @@ class ImageStudioPage extends StatefulWidget {
 }
 
 class _ImageStudioPageState extends State<ImageStudioPage>
-    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+    with WidgetsBindingObserver {
   late final _api = widget.api ?? ImageApi(widget.config);
   late final _files = widget.files ?? FileApi(widget.config);
-  late final _tabs = TabController(length: 2, vsync: this);
   final _tasks = <ImageTask>[];
   final _pages = <int, List<ImageTask>>{};
   int _lastPolledPage = 0;
@@ -46,11 +43,6 @@ class _ImageStudioPageState extends State<ImageStudioPage>
   int _page = 1, _totalPages = 1;
   String? _error;
   bool _pageError = false;
-  bool _showHistory = false, _loadingHistory = false;
-  final _history = <ImageLoopHistory>[];
-  ImageLoopHistoryPage? _historyPage;
-  String? _historyError;
-  bool _historyPageError = false, _historyNeedsRefresh = false;
 
   @override
   void initState() {
@@ -60,9 +52,7 @@ class _ImageStudioPageState extends State<ImageStudioPage>
     _poll = Timer.periodic(const Duration(seconds: 5), (_) {
       final foreground =
           WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
-      if (!foreground ||
-          _showHistory ||
-          ModalRoute.isCurrentOf(context) != true) {
+      if (!foreground || ModalRoute.isCurrentOf(context) != true) {
         return;
       }
       final activePages = _pages.keys.where(
@@ -80,14 +70,13 @@ class _ImageStudioPageState extends State<ImageStudioPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed &&
         ModalRoute.isCurrentOf(context) == true) {
-      unawaited(_refresh());
+      unawaited(_load());
     }
   }
 
   @override
   void dispose() {
     _poll?.cancel();
-    _tabs.dispose();
     WidgetsBinding.instance.removeObserver(this);
     if (widget.api == null) _api.close();
     if (widget.files == null) _files.close();
@@ -133,69 +122,7 @@ class _ImageStudioPageState extends State<ImageStudioPage>
     }
   }
 
-  Future<void> _loadHistory({bool more = false}) async {
-    if (_loadingHistory) return;
-    setState(() {
-      _loadingHistory = true;
-      _historyError = null;
-    });
-    try {
-      final result = await _api.loopHistory(
-        page: more ? _historyPage!.page + 1 : 1,
-      );
-      if (!mounted) return;
-      setState(() {
-        if (!more) _history.clear();
-        final seen = _history.map((record) => record.loop.rootId).toSet();
-        _history.addAll(
-          result.items.where((record) => seen.add(record.loop.rootId)),
-        );
-        _historyPage = result;
-        if (!more) _historyNeedsRefresh = false;
-      });
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _historyError = imageError(error);
-          _historyPageError = more;
-        });
-      }
-    } finally {
-      if (mounted) setState(() => _loadingHistory = false);
-    }
-  }
-
-  Future<void> _refresh() => _showHistory ? _loadHistory() : _load();
-
-  void _selectTab(int index) {
-    final showHistory = index == 1;
-    if (_showHistory == showHistory) return;
-    setState(() => _showHistory = showHistory);
-    if (showHistory && (_historyPage == null || _historyNeedsRefresh)) {
-      unawaited(_loadHistory());
-    }
-  }
-
-  Future<void> _openHistory(ImageLoopHistory history) async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => ImageLoopDetailPage(
-          rootId: history.loop.rootId,
-          initialHistory: history,
-          api: _api,
-          files: _files,
-          picker: widget.picker,
-        ),
-      ),
-    );
-    if (mounted) await _loadHistory();
-  }
-
   Future<void> _create() async {
-    if (_showHistory) {
-      _tabs.animateTo(0);
-      _selectTab(0);
-    }
     final task = await Navigator.of(context).push<ImageTask>(
       MaterialPageRoute(
         builder: (_) =>
@@ -227,29 +154,19 @@ class _ImageStudioPageState extends State<ImageStudioPage>
       ),
     );
     if (!mounted) return;
-    _historyNeedsRefresh = true;
     await _load();
   }
 
   @override
   Widget build(BuildContext context) {
-    final busy = _showHistory ? _loadingHistory : _loading;
-    final loaded = _showHistory ? _historyPage != null : _loaded;
-    final error = _showHistory ? _historyError : _error;
-    final pageError = _showHistory ? _historyPageError : _pageError;
-    final historyPage = _historyPage;
-    final canLoadMore = _showHistory
-        ? historyPage != null && historyPage.page < historyPage.totalPages
-        : _page < _totalPages;
-    final count = _showHistory ? _history.length : _tasks.length;
-    Future<void> loadMore() =>
-        _showHistory ? _loadHistory(more: true) : _load(more: true);
+    final count = _tasks.length;
+    final error = _error;
     return Scaffold(
       appBar: AppBar(
         actions: [
           IconButton(
-            tooltip: _showHistory ? '刷新 LOOP 历史' : '刷新图像作品',
-            onPressed: busy ? null : _refresh,
+            tooltip: '刷新图像作品',
+            onPressed: _loading ? null : _load,
             icon: const Icon(Icons.refresh_rounded),
           ),
         ],
@@ -265,9 +182,9 @@ class _ImageStudioPageState extends State<ImageStudioPage>
                   textScaler.scale(30) * 5 + 8 > constraints.maxWidth - 48;
               final columns = constraints.maxWidth >= 378 && !largeText ? 2 : 1;
               return RefreshIndicator(
-                onRefresh: _refresh,
+                onRefresh: _load,
                 child: CustomScrollView(
-                  key: PageStorageKey(_showHistory),
+                  key: const PageStorageKey('image-studio-works'),
                   physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
                     SliverPadding(
@@ -286,54 +203,36 @@ class _ImageStudioPageState extends State<ImageStudioPage>
                               icon: const Icon(Icons.add_rounded),
                               label: const Text('新建图像'),
                             ),
-                            const SizedBox(height: 16),
-                            TabBar(
-                              controller: _tabs,
-                              isScrollable: true,
-                              tabAlignment: TabAlignment.start,
-                              labelPadding: EdgeInsets.symmetric(
-                                horizontal: largeText ? 4 : 16,
-                              ),
-                              onTap: _selectTab,
-                              tabs: const [
-                                Tab(text: '我的作品'),
-                                Tab(text: 'LOOP 历史'),
-                              ],
+                            const SizedBox(height: 24),
+                            Text(
+                              '我的作品',
+                              style: Theme.of(context).textTheme.titleSmall,
                             ),
+                            const SizedBox(height: 8),
+                            const Divider(height: 1),
                           ],
                         ),
                       ),
                     ),
-                    if (busy && !loaded)
+                    if (_loading && !_loaded)
                       const SliverPadding(
                         padding: EdgeInsets.symmetric(horizontal: 24),
                         sliver: SliverToBoxAdapter(
                           child: LinearProgressIndicator(minHeight: 2),
                         ),
                       ),
-                    if (error != null && !pageError)
+                    if (error != null && !_pageError)
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
                         sliver: SliverToBoxAdapter(
-                          child: ImageNotice(text: error, onRetry: _refresh),
+                          child: ImageNotice(text: error, onRetry: _load),
                         ),
                       ),
-                    if (loaded && count == 0 && error == null)
+                    if (_loaded && count == 0 && error == null)
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
                         sliver: SliverToBoxAdapter(
-                          child: _EmptyGallery(history: _showHistory),
-                        ),
-                      ),
-                    if (_showHistory && historyPage != null && count > 0)
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
-                        sliver: SliverToBoxAdapter(
-                          child: Text(
-                            '共 ${historyPage.total} 条',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: AppPalette(context).muted),
-                          ),
+                          child: const _EmptyGallery(),
                         ),
                       ),
                     SliverPadding(
@@ -362,20 +261,22 @@ class _ImageStudioPageState extends State<ImageStudioPage>
                         },
                       ),
                     ),
-                    if (canLoadMore || (error != null && pageError))
+                    if (_page < _totalPages || (error != null && _pageError))
                       SliverPadding(
                         padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
                         sliver: SliverToBoxAdapter(
                           child: Column(
                             children: [
-                              if (error != null && pageError)
+                              if (error != null && _pageError)
                                 ImageNotice(text: error),
                               TextButton(
-                                onPressed: busy ? null : loadMore,
+                                onPressed: _loading
+                                    ? null
+                                    : () => _load(more: true),
                                 child: Text(
-                                  busy
+                                  _loading
                                       ? '正在查询…'
-                                      : error != null && pageError
+                                      : error != null && _pageError
                                       ? '重试加载更多'
                                       : '加载更多',
                                 ),
@@ -396,32 +297,6 @@ class _ImageStudioPageState extends State<ImageStudioPage>
   }
 
   Widget _tile(int index) {
-    if (_showHistory) {
-      final history = _history[index];
-      final loop = history.loop;
-      return ImageGalleryTile(
-        key: ValueKey(('loop', loop.rootId)),
-        title: history.root.displayTitle,
-        uri: history.previewUri,
-        metadata: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(loop.status.label),
-            const SizedBox(height: 2),
-            Wrap(
-              spacing: 8,
-              runSpacing: 2,
-              children: [
-                Text('已编辑 ${loop.usedEdits}/${loop.maxEdits} 次'),
-                if (history.createdAt case final date?)
-                  Text(imageStudioDate(date)),
-              ],
-            ),
-          ],
-        ),
-        onTap: () => _openHistory(history),
-      );
-    }
     final task = _tasks[index];
     return ImageGalleryTile(
       key: ValueKey(task.id),
@@ -448,9 +323,7 @@ class _ImageStudioPageState extends State<ImageStudioPage>
 }
 
 class _EmptyGallery extends StatelessWidget {
-  const _EmptyGallery({required this.history});
-
-  final bool history;
+  const _EmptyGallery();
 
   @override
   Widget build(BuildContext context) {
@@ -464,19 +337,16 @@ class _EmptyGallery extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(20, 28, 20, 28),
         child: Column(
           children: [
-            Icon(
-              history ? Icons.history_rounded : Icons.photo_library_outlined,
-              color: palette.accentInk,
-            ),
+            Icon(Icons.photo_library_outlined, color: palette.accentInk),
             const SizedBox(height: 12),
             Text(
-              history ? '暂无 LOOP 记录' : '还没有图像作品',
+              '还没有图像作品',
               style: Theme.of(context).textTheme.titleSmall,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 6),
             Text(
-              history ? '从已完成的图像开始「LOOP 编辑」。' : '新建图像后，可以在这里查看进度和成图。',
+              '新建图像后，可以在这里查看进度和成图。',
               style: TextStyle(color: palette.muted, height: 1.6),
               textAlign: TextAlign.center,
             ),

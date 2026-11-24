@@ -102,6 +102,19 @@ class ImageLoopHistory {
   final Uri? previewUri;
   final DateTime? createdAt, updatedAt;
 
+  ImageTask get previewImage => root.id == previewId
+      ? root
+      : loop.versions.firstWhere(
+          (image) => image.id == previewId,
+          orElse: () => root,
+        );
+
+  Uri? resultUriFor(ImageTask image) =>
+      image.resultUri ??
+      (image.id == previewId && image.status == ImageTaskStatus.succeeded
+          ? previewUri
+          : null);
+
   factory ImageLoopHistory.fromJson(Map<String, dynamic> data) {
     final loop = ImageLoopState.fromJson(data);
     final root = ImageTask.tryParse(data['root_image']);

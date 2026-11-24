@@ -19,7 +19,6 @@ class ImageLoopDetailPage extends StatefulWidget {
     required this.rootId,
     required this.api,
     required this.files,
-    this.initialHistory,
     this.initialRoot,
     this.picker,
   });
@@ -27,7 +26,6 @@ class ImageLoopDetailPage extends StatefulWidget {
   final int rootId;
   final ImageApi api;
   final FileApi files;
-  final ImageLoopHistory? initialHistory;
   final ImageTask? initialRoot;
   final StudioImagePicker? picker;
 
@@ -49,9 +47,7 @@ class _ImageLoopDetailPageState extends State<ImageLoopDetailPage>
   @override
   void initState() {
     super.initState();
-    _history = widget.initialHistory;
-    _root = _history?.root ?? widget.initialRoot;
-    _loop = _history?.loop;
+    _root = widget.initialRoot;
     WidgetsBinding.instance.addObserver(this);
     unawaited(_refresh());
     _poll = Timer.periodic(const Duration(seconds: 5), (_) {
@@ -209,8 +205,9 @@ class _ImageLoopDetailPageState extends State<ImageLoopDetailPage>
     if (!verified) setState(() => _error = imageError(failure!));
   }
 
-  void _select(ImageTask image) {
-    setState(() => _selectedId = image.id);
+  void _select(ImageTask? image) {
+    setState(() => _selectedId = image?.id);
+    if (!_scroll.hasClients || _scroll.offset == 0) return;
     if (MediaQuery.disableAnimationsOf(context)) {
       _scroll.jumpTo(0);
     } else {
@@ -232,11 +229,11 @@ class _ImageLoopDetailPageState extends State<ImageLoopDetailPage>
     final loop = _loop;
     final versions = loop?.versions ?? const <ImageTask>[];
     final images = [?root, ...versions];
-    final preferredId = _selectedId ?? loop?.acceptedId ?? _history?.previewId;
+    final preview = _history?.previewImage ?? root;
     final selected =
-        images.where((image) => image.id == preferredId).firstOrNull ??
-        images.where((image) => image.id == _history?.previewId).firstOrNull ??
-        root;
+        images.where((image) => image.id == _selectedId).firstOrNull ?? preview;
+    final sourceId = selected?.id == root?.id ? null : selected?.sourceImageId;
+    final source = images.where((image) => image.id == sourceId).firstOrNull;
     final busy = _fetching || _closing;
     final updatedAt = _history?.updatedAt;
     final canClose = loop != null && loop.usedEdits > 0 && loop.canClose;
@@ -271,111 +268,176 @@ class _ImageLoopDetailPageState extends State<ImageLoopDetailPage>
         child: EditorialLayout(
           child: RefreshIndicator(
             onRefresh: _refresh,
-            child: ListView(
+            child: CustomScrollView(
               controller: _scroll,
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
-              children: [
-                if (busy && loop == null)
-                  const LinearProgressIndicator(minHeight: 2),
-                if (_error case final error?) ...[
-                  ImageNotice(text: error, onRetry: busy ? null : _refresh),
-                  const SizedBox(height: 16),
-                ],
-                if (root != null && loop != null && selected != null) ...[
-                  Text(
-                    root.displayTitle,
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w500,
-                      height: 1.35,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  DefaultTextStyle.merge(
-                    style: theme.textTheme.bodySmall!.copyWith(
-                      color: palette.muted,
-                    ),
-                    child: Wrap(
-                      spacing: 10,
-                      runSpacing: 4,
-                      children: [
-                        Text(
-                          loop.usedEdits == 0 ? '等待首次编辑' : loop.status.label,
+              slivers: [
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
+                  sliver: SliverList.list(
+                    children: [
+                      if (busy && loop == null)
+                        const LinearProgressIndicator(minHeight: 2),
+                      if (_error case final error?) ...[
+                        ImageNotice(
+                          text: error,
+                          onRetry: busy ? null : _refresh,
                         ),
-                        Text('已编辑 ${loop.usedEdits}/${loop.maxEdits} 次'),
-                        if (updatedAt != null)
-                          Text('更新于 ${imageStudioDate(updatedAt)}'),
+                        const SizedBox(height: 16),
                       ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  if (selected.resultUri != null)
-                    ImageArtwork(key: ValueKey(selected.id), image: selected)
-                  else
-                    EditorialPanel(
-                      child: ImageStatusLine(status: selected.status),
-                    ),
-                  const SizedBox(height: 12),
-                  Text(
-                    _versionLabel(selected, root.id),
-                    style: theme.textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 4),
-                  _VersionMetadata(
-                    image: selected,
-                    accepted: loop.acceptedId == selected.id,
-                  ),
-                  if (selected.resultUri != null &&
-                      (loop.canEdit || canClose)) ...[
-                    const SizedBox(height: 16),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        if (loop.canEdit)
-                          FilledButton.icon(
-                            onPressed: busy ? null : () => _edit(selected),
-                            icon: const Icon(Icons.edit_outlined),
-                            label: Text(
-                              loop.usedEdits == 0 ? '开始 LOOP' : '继续编辑',
+                      if (root != null && loop != null && selected != null) ...[
+                        Text(
+                          root.displayTitle,
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            height: 1.35,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        DefaultTextStyle.merge(
+                          style: theme.textTheme.bodySmall!.copyWith(
+                            color: palette.muted,
+                          ),
+                          child: Wrap(
+                            spacing: 10,
+                            runSpacing: 4,
+                            children: [
+                              Text(
+                                loop.usedEdits == 0
+                                    ? '等待首次编辑'
+                                    : loop.status.label,
+                              ),
+                              Text('已编辑 ${loop.usedEdits}/${loop.maxEdits} 次'),
+                              if (updatedAt != null)
+                                Text('更新于 ${imageStudioDate(updatedAt)}'),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          children: [
+                            ChoiceChip(
+                              label: Text('原始图像 #${root.id}'),
+                              selected: selected.id == root.id,
+                              onSelected: (value) {
+                                if (value) _select(root);
+                              },
                             ),
+                            if (preview != null && preview.id != root.id)
+                              ChoiceChip(
+                                label: Text(
+                                  loop.acceptedId == preview.id
+                                      ? '定稿预览'
+                                      : '历史预览',
+                                ),
+                                selected: selected.id == preview.id,
+                                onSelected: (value) {
+                                  if (value) _select(null);
+                                },
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        if ((_history?.resultUriFor(selected) ??
+                                selected.resultUri)
+                            case final previewUri?)
+                          ImageArtwork(
+                            key: ValueKey(selected.id),
+                            image: selected,
+                            previewUri: previewUri,
+                          )
+                        else
+                          EditorialPanel(
+                            child: selected.status == ImageTaskStatus.succeeded
+                                ? const Text('暂无可预览的图片')
+                                : ImageStatusLine(status: selected.status),
                           ),
-                        if (canClose)
-                          OutlinedButton.icon(
-                            onPressed: busy
-                                ? null
-                                : () => _close(ImageLoopExit.accept, selected),
-                            icon: const Icon(Icons.check_rounded),
-                            label: const Text('采用此版本'),
+                        const SizedBox(height: 12),
+                        Text(
+                          _versionLabel(selected, root.id),
+                          style: theme.textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 4),
+                        _VersionMetadata(
+                          image: selected,
+                          accepted: loop.acceptedId == selected.id,
+                          sourceId: sourceId,
+                          onSourceTap: source == null
+                              ? null
+                              : () => _select(source),
+                        ),
+                        if (selected.resultUri != null &&
+                            (loop.canEdit || canClose)) ...[
+                          const SizedBox(height: 16),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              if (loop.canEdit)
+                                FilledButton.icon(
+                                  onPressed: busy
+                                      ? null
+                                      : () => _edit(selected),
+                                  icon: const Icon(Icons.edit_outlined),
+                                  label: Text(
+                                    loop.usedEdits == 0 ? '开始 LOOP' : '继续编辑',
+                                  ),
+                                ),
+                              if (canClose)
+                                OutlinedButton.icon(
+                                  onPressed: busy
+                                      ? null
+                                      : () => _close(
+                                          ImageLoopExit.accept,
+                                          selected,
+                                        ),
+                                  icon: const Icon(Icons.check_rounded),
+                                  label: const Text('采用此版本'),
+                                ),
+                            ],
                           ),
+                        ],
+                        if (selected.prompt case final prompt?) ...[
+                          const SizedBox(height: 24),
+                          Text(
+                            selected.id == root.id ? '画面描述' : '修改描述',
+                            style: theme.textTheme.titleSmall,
+                          ),
+                          const SizedBox(height: 8),
+                          SelectableText(
+                            prompt,
+                            style: const TextStyle(height: 1.7),
+                          ),
+                        ],
+                        const SizedBox(height: 28),
+                        const Divider(height: 1),
+                        const SizedBox(height: 16),
+                        Text('版本记录', style: theme.textTheme.titleMedium),
+                        const SizedBox(height: 8),
                       ],
+                    ],
+                  ),
+                ),
+                if (root != null && loop != null && selected != null)
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+                    sliver: SliverList.separated(
+                      itemCount: images.length,
+                      separatorBuilder: (_, _) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final image = images[index];
+                        return _VersionRow(
+                          key: ValueKey(image.id),
+                          image: image,
+                          rootId: root.id,
+                          selected: image.id == selected.id,
+                          accepted: image.id == loop.acceptedId,
+                          onTap: () => _select(image),
+                        );
+                      },
                     ),
-                  ],
-                  if (selected.prompt case final prompt?) ...[
-                    const SizedBox(height: 24),
-                    Text(
-                      selected.id == root.id ? '画面描述' : '修改描述',
-                      style: theme.textTheme.titleSmall,
-                    ),
-                    const SizedBox(height: 8),
-                    SelectableText(prompt, style: const TextStyle(height: 1.7)),
-                  ],
-                  const SizedBox(height: 28),
-                  const Divider(height: 1),
-                  const SizedBox(height: 16),
-                  Text('版本记录', style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 8),
-                  for (final image in images) ...[
-                    _VersionRow(
-                      image: image,
-                      rootId: root.id,
-                      selected: image.id == selected.id,
-                      accepted: image.id == loop.acceptedId,
-                      onTap: () => _select(image),
-                    ),
-                    const Divider(height: 1),
-                  ],
-                ],
+                  ),
               ],
             ),
           ),
@@ -392,10 +454,17 @@ String _versionLabel(ImageTask image, int rootId) => image.id == rootId
     : '第 ${image.loopVersion} 版';
 
 class _VersionMetadata extends StatelessWidget {
-  const _VersionMetadata({required this.image, required this.accepted});
+  const _VersionMetadata({
+    required this.image,
+    required this.accepted,
+    this.sourceId,
+    this.onSourceTap,
+  });
 
   final ImageTask image;
   final bool accepted;
+  final int? sourceId;
+  final VoidCallback? onSourceTap;
 
   @override
   Widget build(BuildContext context) => DefaultTextStyle.merge(
@@ -404,11 +473,29 @@ class _VersionMetadata extends StatelessWidget {
     child: Wrap(
       spacing: 8,
       runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         Text('#${image.id}'),
         ImageStatusLine(status: image.status),
         if (accepted) const Text('定稿'),
-        if (image.sourceImageId case final id?) Text('基于 #$id'),
+        if (sourceId case final id?)
+          if (onSourceTap case final open?)
+            TextButton(
+              onPressed: open,
+              style: TextButton.styleFrom(
+                textStyle: Theme.of(context).textTheme.bodySmall,
+              ),
+              child: Wrap(
+                spacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text('编辑底图 #$id'),
+                  const Icon(Icons.chevron_right_rounded, size: 16),
+                ],
+              ),
+            )
+          else
+            Text('编辑底图 #$id'),
       ],
     ),
   );
@@ -416,6 +503,7 @@ class _VersionMetadata extends StatelessWidget {
 
 class _VersionRow extends StatelessWidget {
   const _VersionRow({
+    super.key,
     required this.image,
     required this.rootId,
     required this.selected,
@@ -462,7 +550,13 @@ class _VersionRow extends StatelessWidget {
                         style: theme.textTheme.titleSmall,
                       ),
                       const SizedBox(height: 3),
-                      _VersionMetadata(image: image, accepted: accepted),
+                      _VersionMetadata(
+                        image: image,
+                        accepted: accepted,
+                        sourceId: image.id == rootId
+                            ? null
+                            : image.sourceImageId,
+                      ),
                     ],
                   ),
                 ),

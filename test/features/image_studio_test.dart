@@ -12,6 +12,7 @@ import 'package:agent_voice_app/features/images/data/image_loop_models.dart';
 import 'package:agent_voice_app/features/images/data/image_models.dart';
 import 'package:agent_voice_app/features/images/image_create_page.dart';
 import 'package:agent_voice_app/features/images/image_detail_page.dart';
+import 'package:agent_voice_app/features/images/image_loop_detail_page.dart';
 import 'package:agent_voice_app/features/images/image_studio_page.dart';
 import 'package:agent_voice_app/features/images/image_widgets.dart';
 import 'package:flutter/material.dart';
@@ -83,8 +84,8 @@ class _Files extends FileApi {
 class _LoopApi extends _ImageApi {
   final historyPages = <int>[];
   final detailIds = <int>[];
-  var failPagination = true;
   var detailStatus = ImageLoopStatus.processing;
+  Uri? artworkBase;
 
   ImageLoopHistory record(int id, ImageLoopStatus status) => ImageLoopHistory(
     loop: ImageLoopState(
@@ -93,11 +94,21 @@ class _LoopApi extends _ImageApi {
       usedEdits: 3,
       maxEdits: 5,
       versions: [
+        if (artworkBase case final base?)
+          ImageTask(
+            id: id + 90,
+            loopRootImageId: id,
+            loopVersion: 2,
+            sourceImageId: id,
+            status: ImageTaskStatus.succeeded,
+            imageUri: base.resolve('/preview'),
+            prompt: List.filled(80, '保留构图，调整光线。').join(),
+          ),
         ImageTask(
           id: id + 100,
           loopRootImageId: id,
           loopVersion: 3,
-          sourceImageId: id,
+          sourceImageId: artworkBase == null ? id : id + 90,
           status: status == ImageLoopStatus.processing
               ? ImageTaskStatus.running
               : ImageTaskStatus.failed,
@@ -108,27 +119,16 @@ class _LoopApi extends _ImageApi {
       id: id,
       title: id == 89 ? '雾中山海' : '另一条记录',
       status: ImageTaskStatus.succeeded,
+      sourceImageId: 30,
+      imageUri: artworkBase?.resolve('/original'),
     ),
-    previewId: id,
+    previewId: artworkBase == null ? id : id + 90,
   );
 
   @override
   Future<ImageLoopHistoryPage> loopHistory({int page = 1}) async {
     historyPages.add(page);
-    if (page == 2 && failPagination) {
-      failPagination = false;
-      throw const ApiException(503, 'unavailable');
-    }
-    return ImageLoopHistoryPage(
-      items: [
-        record(89, ImageLoopStatus.open),
-        if (page == 2) record(88, ImageLoopStatus.exhausted),
-      ],
-      total: 2,
-      page: page,
-      pageSize: 10,
-      totalPages: 2,
-    );
+    throw StateError('The works gallery must avoid querying LOOP history');
   }
 
   @override
@@ -388,7 +388,7 @@ void main() {
   );
 
   testWidgets(
-    'LOOP tab retries pagination and the detail refreshes by root ID',
+    'studio shows only works and LOOP detail still refreshes by root ID',
     (tester) async {
       final api = _LoopApi();
       final files = _Files();
@@ -406,38 +406,95 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(api.historyPages, isEmpty);
-      await tap(tester, find.text('LOOP 历史'));
-      expect(find.text('共 2 条'), findsOneWidget);
-      await tester.scrollUntilVisible(
-        find.text('加载更多'),
-        150,
-        scrollable: find.byType(Scrollable).first,
+      expect(find.text('我的作品'), findsOneWidget);
+      expect(find.text('LOOP 历史'), findsNothing);
+      expect(find.byType(TabBar), findsNothing);
+      await tap(tester, find.byTooltip('刷新图像作品'));
+      expect(api.pages, [1, 1]);
+      expect(api.historyPages, isEmpty);
+      await tester.pumpWidget(
+        wrap(
+          ImageLoopDetailPage(rootId: 89, api: api, files: files),
+          textScale: 2,
+          dark: true,
+        ),
       );
-      await tap(tester, find.text('加载更多'));
-      expect(find.text('雾中山海'), findsOneWidget);
-      await tester.scrollUntilVisible(
-        find.text('重试加载更多'),
-        150,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tap(tester, find.text('重试加载更多'));
-      expect(api.historyPages, [1, 2, 2]);
-      await tap(tester, find.text('雾中山海'));
+      await tester.pumpAndSettle();
       expect(api.detailIds, [89]);
       expect(find.text('LOOP 详情'), findsOneWidget);
+      expect(find.text('原始图像 #89'), findsOneWidget);
       expect(find.text('版本处理中'), findsOneWidget);
-      expect(find.text('第 3 版'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('第 3 版'), 150);
       await tap(tester, find.text('第 3 版'));
-      expect(find.text('基于 #89'), findsWidgets);
+      expect(find.text('编辑底图 #89'), findsWidgets);
+      expect(find.text('编辑底图 #30'), findsNothing);
       api.detailStatus = ImageLoopStatus.exhausted;
       await tester.pump(const Duration(seconds: 5));
       await tester.pumpAndSettle();
       expect(api.detailIds, [89, 89]);
       expect(find.text('已用完编辑次数'), findsOneWidget);
       expect(find.text('生成失败'), findsWidgets);
+      expect(api.historyPages, isEmpty);
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('LOOP switches from its cached preview to the original', (
+    tester,
+  ) async {
+    await HttpOverrides.runWithHttpOverrides(() async {
+      final api = _LoopApi();
+      addTearDown(api.close);
+      final requests = <String>[];
+      final server = (await tester.runAsync(() async {
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        server.listen((request) async {
+          requests.add(request.uri.path);
+          request.response.add(videoTestBmp(width: 400, height: 224));
+          await request.response.close();
+        });
+        return server;
+      }))!;
+      addTearDown(() => server.close(force: true));
+      api.artworkBase = Uri.http('127.0.0.1:${server.port}');
+      api.current = api.record(89, api.detailStatus).root;
+      await tester.runAsync(() async {
+        await tester.pumpWidget(
+          wrap(ImageStudioPage(config: config, api: api)),
+        );
+        await tester.pumpAndSettle();
+      });
+      final art = find.descendant(
+        of: find.byType(ImageArtwork),
+        matching: find.byType(Image),
+      );
+      await _waitForImage(tester, find.byType(Image));
+      expect(requests, ['/original']);
+      await tester.runAsync(() => tap(tester, find.text('雾中山海')));
+      await tester.runAsync(() => tap(tester, find.text('LOOP 编辑')));
+      expect(find.byType(ImageLoopDetailPage), findsOneWidget);
+      expect(
+        tester.widget<ImageArtwork>(find.byType(ImageArtwork)).image.id,
+        179,
+      );
+      await _waitForImage(tester, art);
+      final sourceLink = find.widgetWithText(TextButton, '编辑底图 #89');
+      await tester.scrollUntilVisible(sourceLink, 120);
+      await tester.runAsync(() => tap(tester, sourceLink));
+      expect(
+        tester.widget<ImageArtwork>(find.byType(ImageArtwork)).image.id,
+        89,
+      );
+      await _waitForImage(tester, art);
+      await tap(tester, find.text('历史预览'));
+      expect(
+        tester.widget<ImageArtwork>(find.byType(ImageArtwork)).image.id,
+        179,
+      );
+      expect(requests, ['/original', '/preview']);
+      expect(tester.takeException(), isNull);
+    }, _RealHttp());
+  });
 
   testWidgets(
     'create keeps submit visible at 320px with large type and keyboard',
@@ -476,5 +533,6 @@ Future<void> _waitForImage(WidgetTester tester, Finder finder) async {
     ).timeout(const Duration(seconds: 5));
   });
   await tester.pumpAndSettle();
-  expect(tester.widget<RawImage>(find.byType(RawImage)).image, isNotNull);
+  final rendered = find.descendant(of: finder, matching: find.byType(RawImage));
+  expect(tester.widget<RawImage>(rendered).image, isNotNull);
 }

@@ -15,38 +15,42 @@ String imageStudioDate(DateTime value) {
   return '${date.year}年${date.month}月${date.day}日';
 }
 
-Future<void> openImageOriginal(BuildContext context, ImageTask image) =>
-    Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (context) => Scaffold(
-          appBar: AppBar(title: const Text('查看原图')),
-          body: SafeArea(
-            top: false,
-            child: InteractiveViewer(
-              maxScale: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Center(
-                  child: EditorialLayout(
-                    child: ImagePreview(
-                      uri: image.resultUri,
-                      label: image.displayTitle,
-                      fit: BoxFit.contain,
-                      showFeedback: true,
-                    ),
-                  ),
+Future<void> openImageOriginal(
+  BuildContext context,
+  ImageTask image, {
+  Uri? previewUri,
+}) => Navigator.of(context).push<void>(
+  MaterialPageRoute(
+    builder: (context) => Scaffold(
+      appBar: AppBar(title: const Text('查看原图')),
+      body: SafeArea(
+        top: false,
+        child: InteractiveViewer(
+          maxScale: 4,
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Center(
+              child: EditorialLayout(
+                child: ImagePreview(
+                  uri: previewUri ?? image.resultUri,
+                  label: image.displayTitle,
+                  fit: BoxFit.contain,
+                  showFeedback: true,
                 ),
               ),
             ),
           ),
         ),
       ),
-    );
+    ),
+  ),
+);
 
 class ImageArtwork extends StatelessWidget {
-  const ImageArtwork({super.key, required this.image});
+  const ImageArtwork({super.key, required this.image, this.previewUri});
 
   final ImageTask image;
+  final Uri? previewUri;
 
   @override
   Widget build(BuildContext context) => Center(
@@ -57,11 +61,12 @@ class ImageArtwork extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: ImagePreview(
-          uri: image.resultUri,
+          uri: previewUri ?? image.resultUri,
           label: image.displayTitle,
           fit: BoxFit.contain,
           showFeedback: true,
-          onOpen: () => openImageOriginal(context, image),
+          onOpen: () =>
+              openImageOriginal(context, image, previewUri: previewUri),
         ),
       ),
     ),

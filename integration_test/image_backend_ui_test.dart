@@ -3,7 +3,6 @@ import 'dart:ui' as ui;
 import 'package:agent_voice_app/core/api/api_client.dart';
 import 'package:agent_voice_app/core/theme/app_theme.dart';
 import 'package:agent_voice_app/features/images/data/image_api.dart';
-import 'package:agent_voice_app/features/images/data/image_loop_models.dart';
 import 'package:agent_voice_app/features/images/data/image_models.dart';
 import 'package:agent_voice_app/features/images/image_studio_page.dart';
 import 'package:agent_voice_app/features/images/image_widgets.dart';
@@ -26,25 +25,15 @@ class VoicePreview extends VoiceSessionController {
   Future<void> disableWakeWord() async {}
 }
 
-class _HistoryPreviewApi extends ImageApi {
-  _HistoryPreviewApi(super.config);
+class _GalleryPreviewApi extends ImageApi {
+  _GalleryPreviewApi(super.config);
 
   bool unavailable = true;
 
   @override
-  Future<ImageTaskPage> list({int page = 1}) async =>
-      const ImageTaskPage([], page: 1, totalPages: 0);
-
-  @override
-  Future<ImageLoopHistoryPage> loopHistory({int page = 1}) async {
+  Future<ImageTaskPage> list({int page = 1}) async {
     if (unavailable) throw const ApiException(503, 'fixture');
-    return const ImageLoopHistoryPage(
-      items: [],
-      total: 0,
-      page: 1,
-      pageSize: 10,
-      totalPages: 0,
-    );
+    return const ImageTaskPage([], page: 1, totalPages: 0);
   }
 }
 
@@ -184,24 +173,77 @@ void main() {
 
     await tester.pageBack();
     await tester.pumpAndSettle();
-    await tester.tap(find.text('LOOP 历史'));
-    await tester.pumpAndSettle();
-    final loopTile = find.byKey(ValueKey(('loop', history.loop.rootId)));
+    expect(find.text('我的作品'), findsOneWidget);
+    expect(find.text('LOOP 历史'), findsNothing);
+    expect(find.byType(TabBar), findsNothing);
+    final loopRootTile = find.byKey(ValueKey(history.root.id));
     await tester.scrollUntilVisible(
-      loopTile,
+      loopRootTile,
       160,
       scrollable: find.byType(Scrollable).first,
     );
-    if (history.previewUri != null) await expectRenderedImage(tester, loopTile);
-    await screenshot('image-loop-history');
-    await tester.tap(loopTile);
+    await tester.tap(loopRootTile);
+    await tester.pumpAndSettle();
+    final openLoop = find.text('LOOP 编辑');
+    await tester.scrollUntilVisible(
+      openLoop,
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(openLoop);
     await tester.pumpAndSettle();
     expect(find.text('LOOP 详情'), findsOneWidget);
     expect(find.text(loopDetail.loop.status.label), findsOneWidget);
-    if (history.previewUri != null) {
-      await expectRenderedImage(tester, find.byType(ImageArtwork));
+    final artwork = find.byType(ImageArtwork);
+    final preview = loopDetail.previewImage;
+    if (loopDetail.resultUriFor(preview) != null) {
+      await expectRenderedImage(tester, artwork);
+      expect(tester.widget<ImageArtwork>(artwork).image.id, preview.id);
     }
     await screenshot('image-loop-detail');
+
+    final sourceId = preview.id == history.root.id
+        ? null
+        : preview.sourceImageId;
+    if (sourceId != null) {
+      final source = [
+        history.root,
+        ...loopDetail.loop.versions,
+      ].where((version) => version.id == sourceId).firstOrNull;
+      if (source?.resultUri != null) {
+        final sourceLink = find.widgetWithText(TextButton, '编辑底图 #$sourceId');
+        await tester.scrollUntilVisible(
+          sourceLink,
+          120,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.tap(sourceLink);
+        await tester.pumpAndSettle();
+        await expectRenderedImage(tester, artwork);
+        expect(tester.widget<ImageArtwork>(artwork).image.id, sourceId);
+        await screenshot('image-loop-edit-source');
+      }
+    }
+
+    final original = find.widgetWithText(
+      ChoiceChip,
+      '原始图像 #${history.root.id}',
+    );
+    expect(original, findsOneWidget);
+    await tester.tap(original);
+    await tester.pumpAndSettle();
+    if (loopDetail.resultUriFor(loopDetail.root) != null) {
+      await expectRenderedImage(tester, artwork);
+      expect(tester.widget<ImageArtwork>(artwork).image.id, history.root.id);
+    }
+    await screenshot('image-loop-original');
+    if (preview.id != history.root.id) {
+      await tester.tap(
+        find.text(loopDetail.loop.acceptedId == preview.id ? '定稿预览' : '历史预览'),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.widget<ImageArtwork>(artwork).image.id, preview.id);
+    }
 
     final timeline = find.text('版本记录');
     await tester.scrollUntilVisible(
@@ -210,13 +252,13 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     await screenshot('image-loop-versions');
-    final original = find.text('初稿');
+    final originalRow = find.text('初稿');
     await tester.scrollUntilVisible(
-      original,
+      originalRow,
       160,
       scrollable: find.byType(Scrollable).first,
     );
-    await tester.tap(original.last);
+    await tester.tap(originalRow.last);
     await tester.pumpAndSettle();
     if (history.root.resultUri != null) {
       expect(
@@ -251,7 +293,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    final previewApi = _HistoryPreviewApi(config);
+    final previewApi = _GalleryPreviewApi(config);
     addTearDown(previewApi.close);
     await tester.pumpWidget(
       MaterialApp(
@@ -276,13 +318,13 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('LOOP 历史'));
-    await screenshot('image-loop-error-dark-large');
+    expect(find.text('LOOP 历史'), findsNothing);
+    await screenshot('image-gallery-error-dark-large');
     expect(find.text('图像服务暂不可用，请稍后重试'), findsOneWidget);
     previewApi.unavailable = false;
     await tester.tap(find.text('重试'));
-    await screenshot('image-loop-empty-dark-large');
-    expect(find.text('暂无 LOOP 记录'), findsOneWidget);
+    await screenshot('image-gallery-empty-dark-large');
+    expect(find.text('还没有图像作品'), findsOneWidget);
 
     binding.reportData = {
       ...?binding.reportData,
