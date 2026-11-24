@@ -9,6 +9,8 @@
 3. 提交后立即查看任务。运行、排队和云端保存期间，可以返回列表或关闭 App。重新打开工作室可以继续查看任务。
 4. 已完成图像可以放大浏览。选择「继续编辑」，填写修改描述，也可以追加最多 2 张参考图。成功提交后，新的编辑任务和原图分别保留。
 5. 图像详情菜单可以修改标题。终态可以删除，需二次确认。删除后该任务从 App 的作品列表移除。
+6. 在已完成的图像点「LOOP 编辑」进入轮次编辑。工作室的「LOOP 历史」可以按页浏览语音和 App 提交过的 LOOP。详情默认展示后端选定的预览图，版本记录保留初稿、创建顺序、源图、生成状态和定稿标记。
+7. 选中已保存的初稿或旧版可以继续编辑。定稿和结束都需确认。已用次数和上限按后端返回值显示，结束时已经提交的版本会继续处理。
 
 ## 接口与状态
 
@@ -19,6 +21,11 @@
 | 编辑 | `POST /images/{id}/edits` | 使用已有图像作原图，同样返回新任务 |
 | 列表 | `GET /images?page=1&page_size=20` | 使用服务端分页，按任务 ID 去重 |
 | 详情 | `GET /images/{id}` | 通过本地记录 ID 查询，支持手动刷新 |
+| LOOP 历史 | `GET /images/loops?page=1&page_size=10` | 使用服务端顺序与总数，分页按根图 ID 去重 |
+| LOOP 详情 | `GET /images/loops/{root_image_id}` | 列表项与详情同结构，返回预览、初稿、版本和定稿编号 |
+| LOOP 状态 | `GET /images/{image_id}/loop` | 有效原图尚无历史时读取可用次数和状态 |
+| LOOP 编辑 | `POST /images/{image_id}/loop/edits` | 从选中的根图或版本提交，使用原来的幂等重试流程 |
+| LOOP 定稿或结束 | `POST /images/{image_id}/loop/close` | 采用时用所选图片编号，结束时用根图编号，随后刷新验证 |
 | 更新标题 | `PATCH /images/{id}` | 只发送 `title`，使用响应更新任务 |
 | 删除 | `DELETE /images/{id}` | 成功响应包含 `deleted=true`，回到列表并刷新 |
 
@@ -34,7 +41,7 @@
 
 图集在常规字号和足够宽的内容区使用双列，窄屏或大字号使用单列。详情按成图的实际比例完整展示，并根据屏幕限制竖图高度。点击图片可进入原图查看页缩放。图集、详情、编辑预览和原图查看页复用已解码成图。详情显示加载进度提示，图片请求最多等待 15 秒，失败或超时可重新加载。
 
-暖白、墨黑和低饱和橄榄色沿用 `AppPalette`，图集使用项目的宋体标题与留白。创作入口、进行中的任务和最终成图分别提供明确操作与状态文字。参考 Android 关于导航与主要操作分层的建议，和 Apple 对耗时未知任务使用不定进度提示的建议。[Android 布局与导航](https://developer.android.com/design/ui/mobile/guides/layout-and-content/layout-and-nav-patterns) · [Apple 进度指示](https://developer.apple.com/design/human-interface-guidelines/progress-indicators) · [Design at Meta](https://www.meta.com/design-at-meta/blog/the-new-instagram-brand-identity/)
+「我的作品」和「LOOP 历史」用同一套图集排版。成图占据卡片主体，标题、轮次和日期放在图下。详情按原比例展示选中图像，缩略图版本记录可切换所选画面。创作表单依次呈现描述、参考图和生成设置，提交按钮固定在键盘上方可见区域。暖白、墨黑和低饱和橄榄色沿用 `AppPalette`，固定大标题继续使用项目打包的 `StudioSerif`。[Adobe Firefly 移动端生成历史](https://helpx.adobe.com/firefly/mobile/view-generation-history/generation-history-overview.html) · [Midjourney 作品整理](https://docs.midjourney.com/hc/en-us/articles/33329462451469-Organizing-Your-Creations) · [Meta 作品优先的布局](https://www.meta.com/design-at-meta/blog/behind-instagrams-brand-evolution-movement-inclusivity-and-a-new-purpose/)
 
 ## 本地与 USB 验证
 
@@ -46,7 +53,7 @@ flutter test test/core/image_api_test.dart test/features/image_studio_test.dart 
 
 正常 Debug APK 从 `lib/main.dart` 构建。脚本按手机已安装版本递增构建号，覆盖安装并通过 `adb reverse tcp:8000 tcp:8000` 将手机的 `http://127.0.0.1:8000` 映射到电脑本地服务。USB 重连后重新建立映射。
 
-只读真机测试入口为 `integration_test/image_backend_ui_test.dart`，驱动为 `test_driver/image_backend_ui_test.dart`。需在对应账号下准备已转存的测试图，可用 `IMAGE_TEST_ID` 限定记录。测试覆盖登录态访问、真实列表与详情、七牛图片解码、工作室入口、新建和编辑表单。默认使用手机安全登录态，也可用仓库已有的一次性 USB 测试身份桥。以覆盖安装和 `flutter drive --use-existing-app=... --keep-app-running` 运行测试包，避免卸载业务 App。完成测试后执行安装脚本恢复正常入口。截图输出到 `build/image-ui-verification/`。
+只读真机测试入口为 `integration_test/image_backend_ui_test.dart`，驱动为 `test_driver/image_backend_ui_test.dart`。需在对应账号下准备已转存的测试图和有可见版本的 LOOP。可用 `IMAGE_TEST_ID` 限定作品记录。测试覆盖登录态、作品与 LOOP 真实列表及详情、七牛图片解码、版本切换、工作室入口、新建和编辑表单。默认使用手机安全登录态，也可用仓库已有的一次性 USB 测试身份桥。以覆盖安装和 `flutter drive --use-existing-app=... --keep-app-running` 运行测试包，避免卸载业务 App。完成测试后执行安装脚本恢复正常入口。截图输出到 `build/image-ui-verification/`。
 
 ### 2026-11-22 真机验收
 

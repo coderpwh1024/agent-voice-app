@@ -16,12 +16,14 @@ class ImageCreatePage extends StatefulWidget {
     required this.files,
     this.source,
     this.picker,
+    this.loopEdit = false,
   });
 
   final ImageApi api;
   final FileApi files;
   final ImageTask? source;
   final StudioImagePicker? picker;
+  final bool loopEdit;
 
   @override
   State<ImageCreatePage> createState() => _ImageCreatePageState();
@@ -41,13 +43,14 @@ class _ImageCreatePageState extends State<ImageCreatePage> {
   bool _uploading = false, _submitting = false;
 
   int? get _sourceId => widget.source?.id;
+  (int?, bool) get _submissionTarget => (_sourceId, widget.loopEdit);
   int get _limit => _sourceId == null ? 3 : 2;
   bool get _formEnabled => _pending == null && !_submitting;
 
   @override
   void initState() {
     super.initState();
-    _pending = widget.api.pendingSubmissions[_sourceId];
+    _pending = widget.api.pendingSubmissions[_submissionTarget];
     if (_pending case final submission?) {
       _prompt.text = submission.draft.prompt;
       _title.text = submission.draft.title ?? '';
@@ -110,6 +113,7 @@ class _ImageCreatePageState extends State<ImageCreatePage> {
             size: _size,
           ),
           _sourceId,
+          loopEdit: widget.loopEdit,
         );
     if (submission.draft.validate(hasSourceImage: _sourceId != null)
         case final error?) {
@@ -123,17 +127,17 @@ class _ImageCreatePageState extends State<ImageCreatePage> {
       _pending = submission;
     });
     final pendingSubmissions = widget.api.pendingSubmissions;
-    pendingSubmissions[_sourceId] = submission;
+    pendingSubmissions[_submissionTarget] = submission;
     try {
       final task = await widget.api.submit(submission);
-      pendingSubmissions.remove(_sourceId);
+      pendingSubmissions.remove(_submissionTarget);
       if (mounted) Navigator.of(context).pop(task);
     } catch (error) {
       final uncertain =
           error is! ApiException ||
           error.statusCode == 0 ||
           error.statusCode >= 500;
-      if (!uncertain) pendingSubmissions.remove(_sourceId);
+      if (!uncertain) pendingSubmissions.remove(_submissionTarget);
       if (!mounted) return;
       setState(() {
         if (!uncertain) _pending = null;
@@ -153,215 +157,259 @@ class _ImageCreatePageState extends State<ImageCreatePage> {
       body: SafeArea(
         top: false,
         child: EditorialLayout(
-          child: Form(
-            key: _form,
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
-              children: [
-                EditorialHeading(eyebrow: '', title: edit ? '继续编辑' : '新建图像'),
-                const SizedBox(height: 24),
-                if (widget.source case final source?) ...[
-                  Text(
-                    '原图 · ${source.displayTitle}',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                  const SizedBox(height: 12),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 184),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: ImagePreview(
-                          uri: source.resultUri,
-                          label: '原图预览',
-                          fit: BoxFit.contain,
-                          showFeedback: true,
+          maxWidth: 640,
+          child: Column(
+            children: [
+              Expanded(
+                child: Form(
+                  key: _form,
+                  child: ListView(
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                    children: [
+                      EditorialHeading(
+                        eyebrow: widget.loopEdit ? 'LOOP' : '',
+                        title: edit ? '继续编辑' : '新建图像',
+                      ),
+                      const SizedBox(height: 24),
+                      if (widget.source case final source?) ...[
+                        _EditingSource(image: source),
+                        const SizedBox(height: 24),
+                      ],
+                      TextFormField(
+                        key: const Key('image-prompt'),
+                        controller: _prompt,
+                        enabled: _formEnabled,
+                        textInputAction: TextInputAction.newline,
+                        minLines: 4,
+                        maxLines: 7,
+                        decoration: InputDecoration(
+                          alignLabelWithHint: true,
+                          labelText: edit ? '修改描述' : '画面描述',
+                          hintText: edit
+                              ? '例如：保留构图，把天空换成薄雾下的清晨'
+                              : '例如：雨后的山间小屋，窗里透出暖黄色的灯光',
                         ),
+                        validator: (value) {
+                          final length = value?.trim().runes.length ?? 0;
+                          if (length == 0) return '请输入画面描述';
+                          if (length > ImageDraft.maxPromptLength) {
+                            return '描述最多 ${ImageDraft.maxPromptLength} 个字符';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 24),
+                      const Divider(height: 1),
+                      const SizedBox(height: 20),
+                      ..._referenceFields(context),
+                      const SizedBox(height: 24),
+                      const Divider(height: 1),
+                      const SizedBox(height: 20),
+                      Text(
+                        '生成设置',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _title,
+                        enabled: _formEnabled,
+                        decoration: const InputDecoration(labelText: '标题（选填）'),
+                        validator: (value) =>
+                            (value?.trim().runes.length ?? 0) >
+                                ImageDraft.maxTitleLength
+                            ? '标题最多 ${ImageDraft.maxTitleLength} 个字符'
+                            : null,
+                      ),
+                      const SizedBox(height: 24),
+                      DropdownButtonFormField<ImageCanvasSize>(
+                        initialValue: _size,
+                        isExpanded: true,
+                        decoration: const InputDecoration(labelText: '画幅'),
+                        items: [
+                          for (final size in ImageCanvasSize.values)
+                            DropdownMenuItem(
+                              value: size,
+                              child: Text(size.label),
+                            ),
+                        ],
+                        onChanged: _formEnabled
+                            ? (size) => setState(() => _size = size!)
+                            : null,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_submitError case final error?) ...[
+                      ImageNotice(text: error),
+                      const SizedBox(height: 12),
+                    ],
+                    FilledButton.icon(
+                      key: const Key('image-submit'),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                        backgroundColor: palette.ink,
+                        foregroundColor: palette.background,
+                      ),
+                      onPressed:
+                          _uploading || _submitting || _failedUpload != null
+                          ? null
+                          : _submit,
+                      icon: Icon(
+                        _pending == null
+                            ? Icons.arrow_forward_rounded
+                            : Icons.refresh,
+                      ),
+                      label: Text(
+                        _submitting
+                            ? '正在提交…'
+                            : _pending != null
+                            ? '确认提交'
+                            : edit
+                            ? '提交编辑'
+                            : '生成图像',
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 24),
-                ],
-                TextFormField(
-                  key: const Key('image-prompt'),
-                  controller: _prompt,
-                  enabled: _formEnabled,
-                  textInputAction: TextInputAction.newline,
-                  minLines: 4,
-                  maxLines: 7,
-                  decoration: InputDecoration(
-                    alignLabelWithHint: true,
-                    labelText: edit ? '修改描述' : '画面描述',
-                    hintText: edit
-                        ? '例如：保留构图，把天空换成薄雾下的清晨'
-                        : '例如：雨后的山间小屋，窗里透出暖黄色的灯光',
-                  ),
-                  validator: (value) {
-                    final length = value?.trim().runes.length ?? 0;
-                    if (length == 0) return '请输入画面描述';
-                    if (length > ImageDraft.maxPromptLength) {
-                      return '描述最多 ${ImageDraft.maxPromptLength} 个字符';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _title,
-                  enabled: _formEnabled,
-                  decoration: const InputDecoration(labelText: '标题（选填）'),
-                  validator: (value) =>
-                      (value?.trim().runes.length ?? 0) >
-                          ImageDraft.maxTitleLength
-                      ? '标题最多 ${ImageDraft.maxTitleLength} 个字符'
-                      : null,
-                ),
-                const SizedBox(height: 24),
-                DropdownButtonFormField<ImageCanvasSize>(
-                  initialValue: _size,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: '画幅'),
-                  items: [
-                    for (final size in ImageCanvasSize.values)
-                      DropdownMenuItem(value: size, child: Text(size.label)),
                   ],
-                  onChanged: _formEnabled
-                      ? (size) => setState(() => _size = size!)
-                      : null,
                 ),
-                const SizedBox(height: 24),
-                Text(
-                  '参考图（选填，最多 $_limit 张）',
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '单张不超过 10 MB',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                if (_attachments.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: [
-                      for (final file in _attachments)
-                        SizedBox(
-                          width: 96,
-                          child: Column(
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(6),
-                                child: SizedBox.square(
-                                  dimension: 96,
-                                  child: ImagePreview(
-                                    uri: Uri.parse(file.url),
-                                    label: file.name,
-                                    cacheWidth: 256,
-                                  ),
-                                ),
-                              ),
-                              TextButton(
-                                style: TextButton.styleFrom(
-                                  minimumSize: const Size(48, 48),
-                                ),
-                                onPressed: _formEnabled && !_uploading
-                                    ? () => setState(
-                                        () => _attachments.remove(file),
-                                      )
-                                    : null,
-                                child: const Text('移除'),
-                              ),
-                            ],
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-                if (_pending case final pending?
-                    when _attachments.isEmpty &&
-                        pending.draft.sourceFileIds.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      '将复用已上传的 ${pending.draft.sourceFileIds.length} 张参考图',
-                    ),
-                  ),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: OutlinedButton.icon(
-                    key: const Key('image-choose-asset'),
-                    onPressed:
-                        _formEnabled &&
-                            !_uploading &&
-                            _attachments.length < _limit
-                        ? _chooseImage
-                        : null,
-                    icon: const Icon(Icons.add_photo_alternate_outlined),
-                    label: Text(_uploading ? '正在上传…' : '从相册添加'),
-                  ),
-                ),
-                if (_uploading)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8),
-                    child: LinearProgressIndicator(minHeight: 2),
-                  ),
-                if (_uploadError case final error?) ImageNotice(text: error),
-                if (_failedUpload != null && !_uploading)
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      TextButton(
-                        onPressed: () => _chooseImage(retry: true),
-                        child: const Text('重新上传'),
-                      ),
-                      TextButton(
-                        onPressed: () => setState(() {
-                          _failedUpload = null;
-                          _uploadError = null;
-                        }),
-                        child: const Text('移除失败的参考图'),
-                      ),
-                    ],
-                  ),
-                const SizedBox(height: 24),
-                if (_submitError case final error?) ...[
-                  ImageNotice(text: error),
-                  const SizedBox(height: 12),
-                ],
-                FilledButton.icon(
-                  key: const Key('image-submit'),
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(48),
-                    backgroundColor: palette.ink,
-                    foregroundColor: palette.background,
-                  ),
-                  onPressed: _uploading || _submitting || _failedUpload != null
-                      ? null
-                      : _submit,
-                  icon: Icon(
-                    _pending == null
-                        ? Icons.arrow_forward_rounded
-                        : Icons.refresh,
-                  ),
-                  label: Text(
-                    _submitting
-                        ? '正在提交…'
-                        : _pending != null
-                        ? '确认提交'
-                        : edit
-                        ? '提交编辑'
-                        : '生成图像',
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
+    );
+  }
+
+  List<Widget> _referenceFields(BuildContext context) => [
+    Text('参考图（选填，最多 $_limit 张）', style: Theme.of(context).textTheme.titleSmall),
+    const SizedBox(height: 4),
+    Text('单张不超过 10 MB', style: Theme.of(context).textTheme.bodySmall),
+    if (_attachments.isNotEmpty) ...[
+      const SizedBox(height: 8),
+      Wrap(
+        spacing: 12,
+        runSpacing: 12,
+        children: [
+          for (final file in _attachments)
+            SizedBox(
+              width: 96,
+              child: Column(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: SizedBox.square(
+                      dimension: 96,
+                      child: ImagePreview(
+                        uri: Uri.parse(file.url),
+                        label: file.name,
+                        cacheWidth: 256,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(48, 48),
+                    ),
+                    onPressed: _formEnabled && !_uploading
+                        ? () => setState(() => _attachments.remove(file))
+                        : null,
+                    child: const Text('移除'),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    ],
+    if (_pending case final pending?
+        when _attachments.isEmpty && pending.draft.sourceFileIds.isNotEmpty)
+      Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Text('将复用已上传的 ${pending.draft.sourceFileIds.length} 张参考图'),
+      ),
+    Align(
+      alignment: Alignment.centerLeft,
+      child: OutlinedButton.icon(
+        key: const Key('image-choose-asset'),
+        onPressed: _formEnabled && !_uploading && _attachments.length < _limit
+            ? _chooseImage
+            : null,
+        icon: const Icon(Icons.add_photo_alternate_outlined),
+        label: Text(_uploading ? '正在上传…' : '从相册添加'),
+      ),
+    ),
+    if (_uploading)
+      const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: LinearProgressIndicator(minHeight: 2),
+      ),
+    if (_uploadError case final error?) ImageNotice(text: error),
+    if (_failedUpload != null && !_uploading)
+      Wrap(
+        spacing: 8,
+        children: [
+          TextButton(
+            onPressed: () => _chooseImage(retry: true),
+            child: const Text('重新上传'),
+          ),
+          TextButton(
+            onPressed: () => setState(() {
+              _failedUpload = null;
+              _uploadError = null;
+            }),
+            child: const Text('移除失败的参考图'),
+          ),
+        ],
+      ),
+  ];
+}
+
+class _EditingSource extends StatelessWidget {
+  const _EditingSource({required this.image});
+
+  final ImageTask image;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: SizedBox.square(
+            dimension: 76,
+            child: ImagePreview(
+              uri: image.resultUri,
+              label: image.displayTitle,
+            ),
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('编辑底图 · #${image.id}', style: theme.textTheme.bodySmall),
+              const SizedBox(height: 4),
+              Text(
+                image.displayTitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleSmall,
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

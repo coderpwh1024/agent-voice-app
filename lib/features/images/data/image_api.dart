@@ -3,16 +3,18 @@ import 'dart:math';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/config/app_config.dart';
+import 'image_loop_models.dart';
 import 'image_models.dart';
 
 class ImageSubmission {
-  ImageSubmission(this.draft, this.sourceImageId)
+  ImageSubmission(this.draft, this.sourceImageId, {this.loopEdit = false})
     : key =
           'image-${List.generate(24, (_) => _random.nextInt(256).toRadixString(16).padLeft(2, '0')).join()}';
 
   static final _random = Random.secure();
   final ImageDraft draft;
   final int? sourceImageId;
+  final bool loopEdit;
   final String key;
 }
 
@@ -23,7 +25,7 @@ class ImageApi {
 
   final AgentApiClient _client;
   final bool _ownsClient;
-  final Map<int?, ImageSubmission> pendingSubmissions = {};
+  final Map<(int?, bool), ImageSubmission> pendingSubmissions = {};
 
   Future<T> _request<T>(
     String method,
@@ -58,15 +60,42 @@ class ImageApi {
   Future<ImageTask> detail(int id) =>
       _request('GET', '/images/$id', ImageTask.fromJson);
 
+  Future<ImageLoopHistoryPage> loopHistory({int page = 1}) => _request(
+    'GET',
+    '/images/loops',
+    ImageLoopHistoryPage.fromJson,
+    query: {'page': '$page', 'page_size': '10'},
+  );
+
+  Future<ImageLoopHistory> loopHistoryDetail(int rootId) =>
+      _request('GET', '/images/loops/$rootId', ImageLoopHistory.fromJson);
+
+  Future<ImageLoopState> loopState(int imageId) =>
+      _request('GET', '/images/$imageId/loop', ImageLoopState.fromJson);
+
+  Future<ImageLoopState> closeLoop(int imageId, ImageLoopExit exit) => _request(
+    'POST',
+    '/images/$imageId/loop/close',
+    ImageLoopState.fromJson,
+    body: {'action': exit.value},
+  );
+
   Future<ImageTask> submit(ImageSubmission submission) async {
     final source = submission.sourceImageId;
+    if (submission.loopEdit && source == null) {
+      throw const ApiException(422, '请先选择编辑底图');
+    }
     if (submission.draft.validate(hasSourceImage: source != null)
         case final error?) {
       throw ApiException(422, error);
     }
     return _request(
       'POST',
-      source == null ? '/images' : '/images/$source/edits',
+      source == null
+          ? '/images'
+          : submission.loopEdit
+          ? '/images/$source/loop/edits'
+          : '/images/$source/edits',
       ImageTask.fromJson,
       body: submission.draft.toJson(),
       headers: {'Idempotency-Key': submission.key},

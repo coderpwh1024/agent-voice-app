@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:agent_voice_app/core/api/execution_models.dart';
 import 'package:agent_voice_app/core/config/app_config.dart';
 import 'package:agent_voice_app/features/images/data/image_api.dart';
+import 'package:agent_voice_app/features/images/data/image_loop_models.dart';
 import 'package:agent_voice_app/features/images/data/image_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -123,4 +124,116 @@ void main() {
     expect(ImageTask.tryParse({'status': 'SUCCEEDED'}), isNull);
     expect(ImageTaskStatus.parse('FUTURE_STATE'), ImageTaskStatus.unknown);
   });
+
+  test(
+    'LOOP history, state, branch edits and close use the same user contract',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final api = ImageApi(
+        AppConfig(
+          baseUrl: 'http://127.0.0.1:${server.port}',
+          accessToken: 'fixture',
+          userId: '4',
+        ),
+      );
+      addTearDown(api.close);
+      addTearDown(() => server.close(force: true));
+      final calls = <String>[];
+      final root = {'id': 41, 'status': 'SUCCEEDED'};
+      final version = {
+        'id': 63,
+        'status': 'FAILED',
+        'loop_version': 3,
+        'loop_root_image_id': 41,
+        'source_image_id': 41,
+      };
+      final history = {
+        'root_image_id': 41,
+        'root_image': root,
+        'versions': [version],
+        'used_edits': 3,
+        'max_edits': 5,
+        'status': 'OPEN',
+        'accepted_image_id': null,
+        'preview_image_id': 41,
+        'preview_image_url': 'https://user@storage.example/unsafe.png',
+        'create_time': '2026-11-24T10:12:00+08:00',
+      };
+      final edit = ImageSubmission(
+        const ImageDraft(prompt: '改成日落'),
+        41,
+        loopEdit: true,
+      );
+      server.listen((request) async {
+        expect(request.headers.value('Authorization'), 'Bearer fixture');
+        final path = request.uri.path;
+        calls.add(path);
+        Object body = history;
+        switch (path) {
+          case '/images/loops':
+            expect(request.uri.queryParameters, {
+              'page': '2',
+              'page_size': '10',
+            });
+            body = {
+              'items': [history],
+              'total': 11,
+              'page': 2,
+              'page_size': 10,
+              'total_pages': 2,
+            };
+          case '/images/41/loop/edits':
+            expect(request.method, 'POST');
+            expect(request.headers.value('Idempotency-Key'), edit.key);
+            expect(jsonDecode(await utf8.decoder.bind(request).join()), {
+              'prompt': '改成日落',
+            });
+            request.response.statusCode = 202;
+            body = {
+              ...version,
+              'id': 65,
+              'status': 'QUEUED',
+              'loop_version': 4,
+            };
+          case '/images/41/loop/close':
+            expect(request.method, 'POST');
+            expect(jsonDecode(await utf8.decoder.bind(request).join()), {
+              'action': 'ACCEPTED',
+            });
+            body = {...history, 'status': 'ACCEPTED', 'accepted_image_id': 41};
+          case '/images/loops/99':
+            request.response.statusCode = 404;
+            request.response.write(jsonEncode({'detail': 'missing'}));
+            await request.response.close();
+            return;
+        }
+        request.response.write(jsonEncode({'code': 200, 'data': body}));
+        await request.response.close();
+      });
+
+      final page = await api.loopHistory(page: 2);
+      expect((page.total, page.page, page.totalPages), (11, 2, 2));
+      final detail = await api.loopHistoryDetail(page.items.single.loop.rootId);
+      expect(detail.previewUri, isNull);
+      expect(detail.createdAt, DateTime.utc(2026, 11, 24, 2, 12));
+      expect(detail.loop.usedEdits, 3);
+      expect(detail.loop.versions.single.loopVersion, 3);
+      expect(detail.loop.versions.single.loopRootImageId, 41);
+      expect(detail.loop.versions.single.resultUri, isNull);
+      expect((await api.loopState(41)).canEdit, isTrue);
+      expect((await api.submit(edit)).loopVersion, 4);
+      final closed = await api.closeLoop(41, ImageLoopExit.accept);
+      expect(closed.acceptedId, 41);
+      expect(closed.canEdit, isFalse);
+      await expectLater(api.loopHistoryDetail(99), throwsException);
+      expect(calls, [
+        '/images/loops',
+        '/images/loops/41',
+        '/images/41/loop',
+        '/images/41/loop/edits',
+        '/images/41/loop/close',
+        '/images/loops/99',
+      ]);
+    },
+  );
 }

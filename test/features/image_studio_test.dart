@@ -8,6 +8,7 @@ import 'package:agent_voice_app/core/config/app_config.dart';
 import 'package:agent_voice_app/core/theme/app_theme.dart';
 import 'package:agent_voice_app/features/images/data/image_api.dart';
 import 'package:agent_voice_app/features/images/data/image_asset_picker.dart';
+import 'package:agent_voice_app/features/images/data/image_loop_models.dart';
 import 'package:agent_voice_app/features/images/data/image_models.dart';
 import 'package:agent_voice_app/features/images/image_create_page.dart';
 import 'package:agent_voice_app/features/images/image_detail_page.dart';
@@ -76,6 +77,64 @@ class _Files extends FileApi {
   }) async {
     uploads++;
     return response.future;
+  }
+}
+
+class _LoopApi extends _ImageApi {
+  final historyPages = <int>[];
+  final detailIds = <int>[];
+  var failPagination = true;
+  var detailStatus = ImageLoopStatus.processing;
+
+  ImageLoopHistory record(int id, ImageLoopStatus status) => ImageLoopHistory(
+    loop: ImageLoopState(
+      rootId: id,
+      status: status,
+      usedEdits: 3,
+      maxEdits: 5,
+      versions: [
+        ImageTask(
+          id: id + 100,
+          loopRootImageId: id,
+          loopVersion: 3,
+          sourceImageId: id,
+          status: status == ImageLoopStatus.processing
+              ? ImageTaskStatus.running
+              : ImageTaskStatus.failed,
+        ),
+      ],
+    ),
+    root: ImageTask(
+      id: id,
+      title: id == 89 ? '雾中山海' : '另一条记录',
+      status: ImageTaskStatus.succeeded,
+    ),
+    previewId: id,
+  );
+
+  @override
+  Future<ImageLoopHistoryPage> loopHistory({int page = 1}) async {
+    historyPages.add(page);
+    if (page == 2 && failPagination) {
+      failPagination = false;
+      throw const ApiException(503, 'unavailable');
+    }
+    return ImageLoopHistoryPage(
+      items: [
+        record(89, ImageLoopStatus.open),
+        if (page == 2) record(88, ImageLoopStatus.exhausted),
+      ],
+      total: 2,
+      page: page,
+      pageSize: 10,
+      totalPages: 2,
+    );
+  }
+
+  @override
+  Future<ImageLoopHistory> loopHistoryDetail(int id) async {
+    detailIds.add(id);
+    return record(id, detailStatus);
   }
 }
 
@@ -300,7 +359,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('图像工作室'), findsOneWidget);
+      expect(find.text('图像\n工作室'), findsOneWidget);
       expect(find.text('排队中'), findsOneWidget);
       api.current = const ImageTask(
         id: 89,
@@ -324,6 +383,84 @@ void main() {
       expect(find.byType(ImageStudioPage), findsOneWidget);
       expect(find.text('再见微光'), findsNothing);
       expect(api.deleted, isTrue);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'LOOP tab retries pagination and the detail refreshes by root ID',
+    (tester) async {
+      final api = _LoopApi();
+      final files = _Files();
+      addTearDown(api.close);
+      addTearDown(files.close);
+      await tester.binding.setSurfaceSize(const Size(320, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpWidget(
+        wrap(
+          ImageStudioPage(config: config, api: api, files: files),
+          textScale: 2,
+          dark: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(api.historyPages, isEmpty);
+      await tap(tester, find.text('LOOP 历史'));
+      expect(find.text('共 2 条'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('加载更多'),
+        150,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tap(tester, find.text('加载更多'));
+      expect(find.text('雾中山海'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('重试加载更多'),
+        150,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tap(tester, find.text('重试加载更多'));
+      expect(api.historyPages, [1, 2, 2]);
+      await tap(tester, find.text('雾中山海'));
+      expect(api.detailIds, [89]);
+      expect(find.text('LOOP 详情'), findsOneWidget);
+      expect(find.text('版本处理中'), findsOneWidget);
+      expect(find.text('第 3 版'), findsOneWidget);
+      await tap(tester, find.text('第 3 版'));
+      expect(find.text('基于 #89'), findsWidgets);
+      api.detailStatus = ImageLoopStatus.exhausted;
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      expect(api.detailIds, [89, 89]);
+      expect(find.text('已用完编辑次数'), findsOneWidget);
+      expect(find.text('生成失败'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'create keeps submit visible at 320px with large type and keyboard',
+    (tester) async {
+      final api = _ImageApi();
+      final files = _Files();
+      addTearDown(api.close);
+      addTearDown(files.close);
+      tester.view.physicalSize = const Size(320, 700);
+      tester.view.devicePixelRatio = 1;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 310);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpWidget(
+        wrap(ImageCreatePage(api: api, files: files), textScale: 2),
+      );
+      await tester.enterText(find.byKey(const Key('image-prompt')), '雨后');
+      await tester.pumpAndSettle();
+      expect(
+        tester.getBottomRight(find.byKey(const Key('image-submit'))).dy,
+        lessThan(390),
+      );
       expect(tester.takeException(), isNull);
     },
   );

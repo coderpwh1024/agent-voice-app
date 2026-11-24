@@ -145,6 +145,8 @@ class ImageMessageCard extends StatelessWidget {
                                 '${createdAt.month}月${createdAt.day}日',
                                 style: captionStyle,
                               ),
+                            if (image.loopVersion case final version?)
+                              Text('LOOP 第 $version 版', style: captionStyle),
                           ],
                         ),
                         if (uri == null) ...[

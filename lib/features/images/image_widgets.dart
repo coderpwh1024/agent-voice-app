@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -6,7 +7,112 @@ import 'package:flutter/material.dart';
 
 import '../../core/content/message_image_loader.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/theme/editorial_widgets.dart';
 import 'data/image_models.dart';
+
+String imageStudioDate(DateTime value) {
+  final date = value.toLocal();
+  return '${date.year}年${date.month}月${date.day}日';
+}
+
+Future<void> openImageOriginal(BuildContext context, ImageTask image) =>
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          appBar: AppBar(title: const Text('查看原图')),
+          body: SafeArea(
+            top: false,
+            child: InteractiveViewer(
+              maxScale: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Center(
+                  child: EditorialLayout(
+                    child: ImagePreview(
+                      uri: image.resultUri,
+                      label: image.displayTitle,
+                      fit: BoxFit.contain,
+                      showFeedback: true,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+class ImageArtwork extends StatelessWidget {
+  const ImageArtwork({super.key, required this.image});
+
+  final ImageTask image;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: math.min(520, MediaQuery.sizeOf(context).height * .60),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: ImagePreview(
+          uri: image.resultUri,
+          label: image.displayTitle,
+          fit: BoxFit.contain,
+          showFeedback: true,
+          onOpen: () => openImageOriginal(context, image),
+        ),
+      ),
+    ),
+  );
+}
+
+class ImageGalleryTile extends StatelessWidget {
+  const ImageGalleryTile({
+    super.key,
+    required this.title,
+    required this.uri,
+    required this.metadata,
+    required this.onTap,
+  });
+
+  final String title;
+  final Uri? uri;
+  final Widget metadata;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(8),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: AspectRatio(
+            aspectRatio: 1,
+            child: ImagePreview(uri: uri, label: title),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
+        const SizedBox(height: 4),
+        DefaultTextStyle.merge(
+          style: Theme.of(context).textTheme.bodySmall!
+              .copyWith(color: AppPalette(context).muted),
+          child: metadata,
+        ),
+      ],
+    ),
+  );
+}
 
 class ImagePreview extends StatefulWidget {
   const ImagePreview({

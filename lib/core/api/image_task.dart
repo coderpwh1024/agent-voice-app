@@ -42,12 +42,14 @@ class ImageTask {
     this.imageUri,
     this.errorCode,
     this.createdAt,
+    this.loopRootImageId,
+    this.loopVersion,
   });
 
   final int id;
   final ImageTaskStatus status;
   final String? title, prompt, model, size, errorCode;
-  final int? sourceImageId;
+  final int? sourceImageId, loopRootImageId, loopVersion;
   final Uri? imageUri;
   final DateTime? createdAt;
 
@@ -57,7 +59,7 @@ class ImageTask {
   static String? _text(Object? value) =>
       value is String && value.trim().isNotEmpty ? value.trim() : null;
 
-  static Uri? _imageUri(Object? value) {
+  static Uri? parseImageUri(Object? value) {
     final uri = value is String ? Uri.tryParse(value.trim()) : null;
     return uri != null &&
             (uri.scheme == 'https' || uri.scheme == 'http') &&
@@ -74,7 +76,6 @@ class ImageTask {
     if (id is! int || id <= 0 || status is! String || status.isEmpty) {
       throw const FormatException('Invalid image task');
     }
-    final source = data['source_image_id'];
     return ImageTask(
       id: id,
       status: ImageTaskStatus.parse(status),
@@ -82,12 +83,17 @@ class ImageTask {
       prompt: _text(data['prompt']),
       model: _text(data['model']),
       size: _text(data['size']),
-      sourceImageId: source is int && source > 0 ? source : null,
-      imageUri: _imageUri(data['image_url']),
+      sourceImageId: _positiveInt(data['source_image_id']),
+      imageUri: parseImageUri(data['image_url']),
       errorCode: _text(data['error_code']),
       createdAt: DateTime.tryParse(_text(data['create_time']) ?? ''),
+      loopRootImageId: _positiveInt(data['loop_root_image_id']),
+      loopVersion: _positiveInt(data['loop_version']),
     );
   }
+
+  static int? _positiveInt(Object? value) =>
+      value is int && value > 0 ? value : null;
 
   static ImageTask? tryParse(Object? value) {
     if (value is! Map<String, dynamic>) return null;

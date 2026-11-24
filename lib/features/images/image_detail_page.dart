@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -11,6 +10,7 @@ import '../../core/theme/editorial_widgets.dart';
 import 'data/image_api.dart';
 import 'data/image_models.dart';
 import 'image_create_page.dart';
+import 'image_loop_detail_page.dart';
 import 'image_widgets.dart';
 
 class ImageDetailPage extends StatefulWidget {
@@ -181,32 +181,20 @@ class _ImageDetailPageState extends State<ImageDetailPage>
     }
   }
 
-  Future<void> _preview(ImageTask task) => Navigator.of(context).push<void>(
-    MaterialPageRoute(
-      builder: (context) => Scaffold(
-        appBar: AppBar(title: const Text('查看原图')),
-        body: SafeArea(
-          top: false,
-          child: InteractiveViewer(
-            maxScale: 4,
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Center(
-                child: EditorialLayout(
-                  child: ImagePreview(
-                    uri: task.resultUri,
-                    label: task.displayTitle,
-                    fit: BoxFit.contain,
-                    showFeedback: true,
-                  ),
-                ),
-              ),
-            ),
-          ),
+  Future<void> _openLoop(ImageTask task) async {
+    final rootId = task.loopRootImageId ?? task.id;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => ImageLoopDetailPage(
+          rootId: rootId,
+          initialRoot: rootId == task.id ? task : null,
+          api: _api,
+          files: _files,
         ),
       ),
-    ),
-  );
+    );
+    if (mounted) await _refresh();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -263,29 +251,6 @@ class _ImageDetailPageState extends State<ImageDetailPage>
                 const SizedBox(height: 16),
               ],
               if (task != null) ...[
-                if (result != null) ...[
-                  Align(
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxHeight: math.min(
-                          520,
-                          MediaQuery.sizeOf(context).height * .60,
-                        ),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: ImagePreview(
-                          uri: result,
-                          label: task.displayTitle,
-                          fit: BoxFit.contain,
-                          showFeedback: true,
-                          onOpen: () => _preview(task),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                ],
                 Text(
                   task.displayTitle,
                   style: Theme.of(context).textTheme.headlineSmall
@@ -299,27 +264,40 @@ class _ImageDetailPageState extends State<ImageDetailPage>
                   children: [
                     ImageStatusLine(status: task.status),
                     Text('#${task.id}', style: TextStyle(color: palette.muted)),
+                    if (task.createdAt case final date?)
+                      Text(
+                        imageStudioDate(date),
+                        style: TextStyle(color: palette.muted),
+                      ),
+                    if (task.loopVersion case final version?)
+                      Text(
+                        'LOOP 第 $version 版',
+                        style: TextStyle(color: palette.accentInk),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 20),
-                if (result != null)
+                if (result != null) ...[
+                  ImageArtwork(image: task),
+                  const SizedBox(height: 20),
                   Wrap(
                     spacing: 12,
                     runSpacing: 8,
                     children: [
-                      FilledButton.icon(
-                        onPressed: busy ? null : () => _editImage(task),
-                        icon: const Icon(Icons.edit_outlined),
-                        label: const Text('继续编辑'),
-                      ),
+                      if (task.loopRootImageId == null)
+                        FilledButton.icon(
+                          onPressed: busy ? null : () => _editImage(task),
+                          icon: const Icon(Icons.edit_outlined),
+                          label: const Text('继续编辑'),
+                        ),
                       OutlinedButton.icon(
-                        onPressed: () => _preview(task),
+                        onPressed: () => openImageOriginal(context, task),
                         icon: const Icon(Icons.open_in_full_rounded),
                         label: const Text('查看原图'),
                       ),
                     ],
-                  )
-                else
+                  ),
+                ] else
                   EditorialPanel(
                     child: Text(switch (task.status) {
                       ImageTaskStatus.storing => '图像已生成，正在保存到云端。',
@@ -332,6 +310,19 @@ class _ImageDetailPageState extends State<ImageDetailPage>
                       _ => '可以返回作品列表。生成进度会在后台更新。',
                     }, style: TextStyle(color: palette.muted, height: 1.7)),
                   ),
+                if (task.loopRootImageId != null || result != null) ...[
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: busy ? null : () => _openLoop(task),
+                      icon: const Icon(Icons.history_rounded),
+                      label: Text(
+                        task.loopRootImageId == null ? 'LOOP 编辑' : '查看 LOOP',
+                      ),
+                    ),
+                  ),
+                ],
                 if (task.prompt case final prompt?) ...[
                   const SizedBox(height: 28),
                   const Divider(height: 1),
@@ -362,7 +353,7 @@ class _ImageDetailPageState extends State<ImageDetailPage>
                         ),
                       ),
                       icon: const Icon(Icons.history_rounded),
-                      label: Text('查看原图任务 #$parentId'),
+                      label: Text('查看编辑底图 #$parentId'),
                     ),
                   ),
                 ],
