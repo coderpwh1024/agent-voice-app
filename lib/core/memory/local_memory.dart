@@ -1,12 +1,30 @@
 import 'dart:convert';
 
-const memoryCategories = ['profile', 'person', 'project', 'episode'];
+const memoryCategories = [
+  'profile',
+  'person',
+  'project',
+  'episode',
+  'procedure',
+];
 const memoryCategoryLabels = {
   'profile': '关于你',
   'person': '人物',
   'project': '项目',
   'episode': '事情',
+  'procedure': '常用流程',
 };
+const imageReviewFirst = 'image_review_first';
+const imageReviewFirstText = '生成图片前先给我看画面方案，明确要求直接生成时再提交。';
+const _factKeys = {
+  'preferred_name',
+  'response_style',
+  'home_city',
+  'preference',
+  'status',
+  'decision',
+};
+const _memoryTopics = {'image', 'video', 'email', 'project', 'other'};
 final memoryIdPattern = RegExp(
   r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
 );
@@ -21,13 +39,26 @@ class DeviceMemoryEntry {
     this.sourceText,
     this.threadId,
     this.sourceTime,
+    this.factKey,
+    this.subject,
+    this.topic,
+    this.eventAt,
+    this.procedureKey,
     this.version = 1,
   });
 
   final String id, text, category, updatedAt;
   final String? sourceId, sourceText, threadId;
   final String? sourceTime;
+  final String? factKey, subject, topic, eventAt, procedureKey;
   final int version;
+
+  DateTime? get eventTime =>
+      DateTime.tryParse(eventAt ?? sourceTime ?? updatedAt);
+
+  (String, String, String)? get factIdentity => factKey == null
+      ? null
+      : (category, subject?.trim().toLowerCase() ?? '', factKey!);
 
   Map<String, Object?> get metadata => {
     'id': id,
@@ -38,12 +69,18 @@ class DeviceMemoryEntry {
     if (sourceText != null) 'source_text': sourceText,
     if (threadId != null) 'thread_id': threadId,
     if (sourceTime != null) 'source_time': sourceTime,
+    if (factKey != null) 'fact_key': factKey,
+    if (subject != null) 'subject': subject,
+    if (topic != null) 'topic': topic,
+    if (eventAt != null) 'event_at': eventAt,
+    if (procedureKey != null) 'procedure_key': procedureKey,
   };
 
   Map<String, Object?> get reference => {
     'id': id,
     'category': category,
     'text': text,
+    if (procedureKey != null) 'procedure_key': procedureKey,
   };
 
   factory DeviceMemoryEntry.fromMetadata(
@@ -52,8 +89,26 @@ class DeviceMemoryEntry {
   ) {
     final id = json['id'] as String;
     final category = json['category'] as String;
+    final factKey = json['fact_key'] as String?;
+    final subject = (json['subject'] as String?)?.trim();
+    final topic = json['topic'] as String?;
+    final eventAt = json['event_at'] as String?;
+    final procedureKey = json['procedure_key'] as String?;
     if (!memoryIdPattern.hasMatch(id) ||
         !memoryCategories.contains(category) ||
+        (category == 'procedure'
+            ? procedureKey != imageReviewFirst
+            : procedureKey != null) ||
+        (factKey != null &&
+            (!_factKeys.contains(factKey) ||
+                category == 'procedure' ||
+                category == 'episode' ||
+                (category != 'profile' &&
+                    (subject == null || subject.isEmpty)))) ||
+        (subject != null && (subject.isEmpty || subject.runes.length > 60)) ||
+        (topic != null && !_memoryTopics.contains(topic)) ||
+        (eventAt != null &&
+            (category != 'episode' || DateTime.tryParse(eventAt) == null)) ||
         text.trim().isEmpty ||
         (json['version'] as int? ?? 1) < 1 ||
         text.runes.length > 1000 ||
@@ -69,6 +124,11 @@ class DeviceMemoryEntry {
       sourceText: json['source_text'] as String?,
       threadId: json['thread_id'] as String?,
       sourceTime: json['source_time'] as String?,
+      factKey: factKey,
+      subject: subject,
+      topic: topic,
+      eventAt: eventAt,
+      procedureKey: procedureKey,
       version: json['version'] as int? ?? 1,
     );
   }

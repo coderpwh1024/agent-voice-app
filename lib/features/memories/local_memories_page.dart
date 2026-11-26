@@ -134,16 +134,19 @@ class _LocalMemoriesPageState extends State<LocalMemoriesPage> {
                   onChanged: (value) => setDialogState(() => category = value!),
                 ),
                 const SizedBox(height: 16),
-                TextField(
-                  controller: editor,
-                  minLines: 3,
-                  maxLines: 8,
-                  maxLength: 1000,
-                  decoration: const InputDecoration(
-                    labelText: '记忆内容',
-                    hintText: '例如：日常回答尽量简短。',
+                if (category == 'procedure')
+                  const Text(imageReviewFirstText)
+                else
+                  TextField(
+                    controller: editor,
+                    minLines: 3,
+                    maxLines: 8,
+                    maxLength: 1000,
+                    decoration: const InputDecoration(
+                      labelText: '记忆内容',
+                      hintText: '例如：日常回答尽量简短。',
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -154,7 +157,7 @@ class _LocalMemoriesPageState extends State<LocalMemoriesPage> {
             ),
             FilledButton(
               onPressed: () {
-                if (editor.text.trim().isNotEmpty) {
+                if (category == 'procedure' || editor.text.trim().isNotEmpty) {
                   Navigator.pop(dialogContext, true);
                 }
               },
@@ -368,9 +371,13 @@ class _LocalMemoriesPageState extends State<LocalMemoriesPage> {
                 OutlinedButton.icon(
                   onPressed: _busy
                       ? null
-                      : () => _run(
-                          () => _store.process(_api.extractLocalMemories),
-                        ),
+                      : () => _run(() async {
+                          final capabilities = await _api.capabilities();
+                          await _store.process(
+                            _api.extractLocalMemories,
+                            version: capabilities.localMemoryVersion,
+                          );
+                        }),
                   icon: const Icon(Icons.refresh_rounded),
                   label: const Text('重试整理'),
                 ),

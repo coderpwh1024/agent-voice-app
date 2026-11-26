@@ -171,7 +171,14 @@ class VoiceSessionController extends ChangeNotifier {
     _localMemory = store;
     store.addListener(_memoryChanged);
     _usingLocalMemory = store.mode == 'local';
-    if (_usingLocalMemory) unawaited(store.process(_api.extractLocalMemories));
+    if (_usingLocalMemory) {
+      unawaited(
+        store.process(
+          _api.extractLocalMemories,
+          version: _capabilities?.localMemoryVersion ?? 1,
+        ),
+      );
+    }
   }
 
   bool canConfirmMemory(String? id) {
@@ -1332,6 +1339,7 @@ class VoiceSessionController extends ChangeNotifier {
         try {
           final context = await _localMemory!.context(
             event['text'] as String? ?? '',
+            version: _capabilities?.localMemoryVersion ?? 1,
           );
           if (socket != _socket) break;
           socket.sendJson(
@@ -1369,7 +1377,12 @@ class VoiceSessionController extends ChangeNotifier {
             text: event['text'] as String,
             threadId: _session?.threadId,
           );
-          unawaited(store.process(_api.extractLocalMemories));
+          unawaited(
+            store.process(
+              _api.extractLocalMemories,
+              version: _capabilities?.localMemoryVersion ?? 1,
+            ),
+          );
         } catch (_) {
           localMemoryNotice = '本次记忆任务未保存，请到本机记忆页核对';
           notifyListeners();
@@ -1480,6 +1493,30 @@ class VoiceSessionController extends ChangeNotifier {
         final data = event['data'];
         if (responseId == null || data is! Map) {
           break;
+        }
+        final loop = data['loop'];
+        final store = _localMemory;
+        if (_usingLocalMemory &&
+            (_capabilities?.localMemoryVersion ?? 1) >= 2 &&
+            store != null &&
+            data['type'] == 'image.loop' &&
+            loop is Map &&
+            loop['status'] == 'ACCEPTED' &&
+            loop['accepted_image_id'] is int) {
+          final threadId = _session?.threadId;
+          unawaited(
+            store
+                .recordImageSelection(
+                  sourceId: responseId,
+                  imageId: loop['accepted_image_id'] as int,
+                  threadId: threadId,
+                )
+                .catchError((Object _) {
+                  debugPrint(
+                    '[LocalMemory] verified image selection persistence failed',
+                  );
+                }),
+          );
         }
         final execution = ExecutionSnapshot.tryParse(data);
         if (execution != null) {

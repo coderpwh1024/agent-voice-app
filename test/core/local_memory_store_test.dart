@@ -200,6 +200,23 @@ void main() {
   );
 
   test(
+    'clear-all candidates cannot erase memories recorded after extraction',
+    () async {
+      await store.save('已有偏好', 'profile');
+      await store.enqueue(sourceId: newEventId(), text: '清空简短偏好');
+      await store.process(
+        (request) async => result(request, confirmation: true, action: 'clear'),
+        version: 2,
+      );
+      final pendingId = store.pending.single['id'] as String;
+      await store.recordImageSelection(sourceId: newEventId(), imageId: 12);
+
+      await expectLater(store.review(pendingId, true), throwsStateError);
+      expect(store.entries, hasLength(2));
+    },
+  );
+
+  test(
     'switches stop capture and suppress context; backup import is validated',
     () async {
       await store.save('简短回答', 'profile');
@@ -246,6 +263,93 @@ void main() {
       await store.clear();
       await store.enqueue(sourceId: source, text: '简短回答');
       expect(store.queued, 0);
+    },
+  );
+
+  test(
+    'stable fact correction replaces the value after confirmation',
+    () async {
+      for (final text in ['简短', '详细']) {
+        await store.enqueue(sourceId: newEventId(), text: text);
+        await store.process((request) async {
+          expect(request['version'], 2);
+          return {
+            ...result(request),
+            'proposals': [
+              {
+                'action': 'add',
+                'category': 'profile',
+                'fact_key': 'response_style',
+                'text': text,
+                'evidence': text,
+                'requires_confirmation': false,
+              },
+            ],
+          };
+        }, version: 2);
+      }
+      final previous = store.entries.single;
+      expect(previous.text, '简短');
+      expect(store.pending.single['target_id'], previous.id);
+      await store.recordImageSelection(sourceId: newEventId(), imageId: 12);
+      await store.review(store.pending.single['id'] as String, true);
+      final updated = store.entries.singleWhere(
+        (entry) => entry.category == 'profile',
+      );
+      expect(updated.id, previous.id);
+      expect(updated.text, '详细');
+    },
+  );
+
+  test(
+    'episodes are chronological and procedures are opt-in and scoped',
+    () async {
+      final newer = newEventId();
+      await store.recordImageSelection(
+        sourceId: newer,
+        imageId: 11,
+        eventAt: '2026-11-25T10:00:00Z',
+      );
+      await store.recordImageSelection(sourceId: newer, imageId: 11);
+      await store.recordImageSelection(
+        sourceId: newEventId(),
+        imageId: 10,
+        eventAt: '2026-11-22T10:00:00Z',
+      );
+      final events =
+          (await store.context('上次图片是哪张', version: 2))['memories'] as List;
+      expect(events.map((event) => event['text']), [
+        '已采用 11 号图片并结束该次编辑。',
+        '已采用 10 号图片并结束该次编辑。',
+      ]);
+      expect(events.first['event_at'], startsWith('2026-11-25'));
+
+      await store.save('', 'procedure');
+      await store.save('', 'procedure');
+      expect(
+        store.entries.where((event) => event.procedureKey == imageReviewFirst),
+        hasLength(1),
+      );
+      for (final query in [
+        '生成一张小船图片',
+        '画一张猫',
+        '生成一张照片',
+        '创建海报',
+        'Generate a photo of a cat',
+      ]) {
+        final wire =
+            (await store.context(query, version: 2))['memories'] as List;
+        expect(
+          wire.map((entry) => entry['procedure_key']),
+          contains(imageReviewFirst),
+          reason: query,
+        );
+      }
+      final legacy = (await store.context('生成一张小船图片'))['memories'] as List;
+      expect(legacy.any((event) => event['category'] == 'procedure'), isFalse);
+      final unrelated =
+          (await store.context('你好', version: 2))['memories'] as List;
+      expect(unrelated, isEmpty);
     },
   );
 }

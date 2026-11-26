@@ -19,6 +19,23 @@ class LocalMemoryStore extends ChangeNotifier {
 
   static const _channel = MethodChannel('agent_voice/local_memory');
   static final _accounts = <String, LocalMemoryStore>{};
+  static final _historyQuery = RegExp(
+    r'上次|上回|之前|最近|当时|那次|last time|previous|recent',
+    caseSensitive: false,
+  );
+  static final _imageCreate = RegExp(
+    r'生成|画|做|创建|制作|创作|绘制|create|generate|draw',
+    caseSensitive: false,
+  );
+  static final _topics = {
+    'image': RegExp(
+      r'图片|图像|照片|配图|海报|插画|壁纸|封面|张图|幅图|号图|画[一个张幅]|绘制|出图|定稿|\b(?:images?|photos?)\b',
+      caseSensitive: false,
+    ),
+    'video': RegExp(r'视频|短片|影片|电影'),
+    'email': RegExp(r'邮件|电邮|投递|发信'),
+    'project': RegExp(r'项目|会议|决定|方案|讨论'),
+  };
 
   static LocalMemoryStore forConfig(AppConfig config) {
     if (config.userId.trim().isEmpty) throw StateError('请先登录');
@@ -103,20 +120,55 @@ class LocalMemoryStore extends ChangeNotifier {
     }
   }
 
-  Future<Map<String, Object?>> context(String query) => _serial(() async {
+  Future<Map<String, Object?>> context(
+    String query, {
+    int version = 1,
+  }) => _serial(() async {
+    final watch = Stopwatch()..start();
     await _load();
-    if (!_document.useMemory) return _context(const []);
-    final tokens = _tokens(query);
-    final ranked = [..._document.entries]
-      ..sort((a, b) {
-        int score(DeviceMemoryEntry entry) =>
-            tokens
-                .where((token) => entry.text.toLowerCase().contains(token))
-                .length *
-            3;
-        final relevance = score(b).compareTo(score(a));
-        return relevance != 0 ? relevance : b.updatedAt.compareTo(a.updatedAt);
-      });
+    if (!_document.useMemory) return _context(const [], version);
+    final historical = _historyQuery.hasMatch(query);
+    final tokens = _tokens(query.replaceAll(_historyQuery, ' '));
+    final topics = _topics.entries
+        .where((item) => item.value.hasMatch(query))
+        .map((item) => item.key)
+        .toSet();
+    final normalizedQuery = query.toLowerCase();
+    final ranked = <(DeviceMemoryEntry, int)>[];
+    for (final entry in _document.entries) {
+      if (entry.category == 'profile' || entry.category == 'procedure') {
+        continue;
+      }
+      final text = entry.text.toLowerCase();
+      final lexical = tokens.where(text.contains).length;
+      final subject = entry.subject;
+      final subjectHit =
+          subject != null && normalizedQuery.contains(subject.toLowerCase());
+      final topicHit = historical && topics.contains(entry.topic);
+      if (lexical > 0 || subjectHit || topicHit) {
+        ranked.add((
+          entry,
+          (subjectHit ? 100 : 0) + (topicHit ? 12 : 0) + lexical,
+        ));
+      }
+    }
+    ranked.sort((a, b) {
+      if (historical &&
+          (a.$1.category == 'episode') != (b.$1.category == 'episode')) {
+        return a.$1.category == 'episode' ? -1 : 1;
+      }
+      final relevance = b.$2.compareTo(a.$2);
+      if (relevance != 0) return relevance;
+      final aTime = a.$1.eventTime;
+      final bTime = b.$1.eventTime;
+      if (a.$1.category == 'episode' &&
+          b.$1.category == 'episode' &&
+          aTime != null &&
+          bTime != null) {
+        return bTime.compareTo(aTime);
+      }
+      return b.$1.updatedAt.compareTo(a.$1.updatedAt);
+    });
     final selected = <DeviceMemoryEntry>[];
     var remaining = 3000;
     var profileBudget = 1500;
@@ -130,24 +182,53 @@ class LocalMemoryStore extends ChangeNotifier {
       profileBudget -= length;
       remaining -= length;
     }
-    for (final entry in ranked) {
-      if (entry.category == 'profile' ||
-          !tokens.any((token) => entry.text.toLowerCase().contains(token))) {
-        continue;
+    if (version >= 2 &&
+        topics.contains('image') &&
+        _imageCreate.hasMatch(query)) {
+      final procedure = _document.entries
+          .where((entry) => entry.procedureKey == imageReviewFirst)
+          .firstOrNull;
+      if (procedure != null && procedure.text.runes.length <= remaining) {
+        selected.add(procedure);
+        remaining -= procedure.text.runes.length;
       }
+    }
+    for (final (entry, _) in ranked) {
       if (entry.text.runes.length > remaining) continue;
       selected.add(entry);
       remaining -= entry.text.runes.length;
       if (selected.length == 8) break;
     }
-    return _context(selected);
+    debugPrint(
+      '[LocalMemory] recall semantic=${selected.where((e) => e.category != 'episode' && e.category != 'procedure').length} '
+      'episodic=${selected.where((e) => e.category == 'episode').length} '
+      'procedural=${selected.where((e) => e.category == 'procedure').length} '
+      'duration_ms=${watch.elapsedMicroseconds / 1000}',
+    );
+    return _context(selected, version);
   });
 
-  Map<String, Object?> _context(List<DeviceMemoryEntry> selected) => {
+  Map<String, Object?> _context(
+    List<DeviceMemoryEntry> selected,
+    int version,
+  ) => {
     'revision': _document.revision,
     'epoch': _document.epoch,
-    'total_count': _document.useMemory ? _document.entries.length : 0,
-    'memories': selected.map((entry) => entry.reference).toList(),
+    'total_count': _document.useMemory
+        ? _document.entries
+              .where((entry) => version >= 2 || entry.category != 'procedure')
+              .length
+        : 0,
+    'memories': [
+      for (final entry in selected)
+        {
+          ...entry.reference,
+          if (version >= 2 &&
+              entry.category == 'episode' &&
+              entry.eventAt != null)
+            'event_at': entry.eventAt,
+        },
+    ],
   };
 
   Set<String> _tokens(String text) {
@@ -194,12 +275,21 @@ class LocalMemoryStore extends ChangeNotifier {
   }) => _serial(() async {
     await _load();
     if (previous != null) _assertCurrent(previous.id, previous.version);
+    final sameCategory = previous?.category == category ? previous : null;
+    final existing = category == 'procedure'
+        ? _document.entries
+              .where((entry) => entry.procedureKey == imageReviewFirst)
+              .firstOrNull
+        : null;
+    if (existing != null && existing.id != previous?.id) return;
     final entry = DeviceMemoryEntry.fromMetadata({
       'id': previous?.id ?? newEventId(),
       'category': category,
+      if (sameCategory != null) ...sameCategory.metadata,
       'updated_at': DateTime.now().toUtc().toIso8601String(),
       'version': (previous?.version ?? 0) + 1,
-    }, text);
+      if (category == 'procedure') 'procedure_key': imageReviewFirst,
+    }, category == 'procedure' ? imageReviewFirstText : text);
     await _change(() {
       _invalidate();
       _document.entries.removeWhere((item) => item.id == entry.id);
@@ -282,7 +372,43 @@ class LocalMemoryStore extends ChangeNotifier {
     );
   });
 
-  Future<void> process(MemoryExtractor extract) async {
+  Future<void> recordImageSelection({
+    required String sourceId,
+    required int imageId,
+    String? threadId,
+    String? eventAt,
+  }) => _serial(() async {
+    await _load();
+    if (!_document.automatic ||
+        _document.mode != 'local' ||
+        !memoryIdPattern.hasMatch(sourceId) ||
+        imageId <= 0 ||
+        _document.entries.any((entry) => entry.sourceId == sourceId) ||
+        _document.completed.contains(sourceId)) {
+      return;
+    }
+    final now = DateTime.now().toUtc().toIso8601String();
+    final entry = DeviceMemoryEntry.fromMetadata({
+      'id': newEventId(),
+      'category': 'episode',
+      'topic': 'image',
+      'source_id': sourceId,
+      'thread_id': ?threadId,
+      'source_time': now,
+      'event_at':
+          DateTime.tryParse(eventAt ?? '')?.toUtc().toIso8601String() ?? now,
+      'updated_at': now,
+    }, '已采用 $imageId 号图片并结束该次编辑。');
+    await _change(() {
+      _document.entries.add(entry);
+      _document.completed.add(sourceId);
+    });
+    debugPrint(
+      '[LocalMemory] recorded verified image selection revision=${_document.revision}',
+    );
+  });
+
+  Future<void> process(MemoryExtractor extract, {int version = 1}) async {
     if (_processing) return;
     _processing = true;
     try {
@@ -297,7 +423,10 @@ class LocalMemoryStore extends ChangeNotifier {
           return Map<String, dynamic>.from(_document.jobs.first);
         });
         if (job == null) return;
-        final references = await context(job['text'] as String);
+        final references = await context(
+          job['text'] as String,
+          version: version,
+        );
         final result = await extract({
           'source_id': job['source_id'],
           'text': job['text'],
@@ -305,6 +434,7 @@ class LocalMemoryStore extends ChangeNotifier {
           if (job['utc_offset_minutes'] != null)
             'utc_offset_minutes': job['utc_offset_minutes'],
           'context': references,
+          if (version >= 2) 'version': 2,
         });
         await _serial(() async {
           final id = job['source_id'];
@@ -336,7 +466,38 @@ class LocalMemoryStore extends ChangeNotifier {
                 'epoch': _document.epoch,
                 'base_revision': _document.revision,
               };
-              if (proposal['action'] == 'add' &&
+              final factKey = proposal['fact_key'];
+              final procedureKey = proposal['procedure_key'];
+              if (procedureKey != null &&
+                  _document.entries.any(
+                    (entry) => entry.procedureKey == procedureKey,
+                  )) {
+                continue;
+              }
+              if (factKey is String && proposal['action'] == 'add') {
+                final subject =
+                    (proposal['subject'] as String?)?.trim().toLowerCase() ??
+                    '';
+                final previous = _document.entries
+                    .where(
+                      (entry) =>
+                          entry.factIdentity ==
+                          (proposal['category'], subject, factKey),
+                    )
+                    .firstOrNull;
+                if (previous != null) {
+                  if (previous.text == proposal['text']) continue;
+                  pending['action'] = 'update';
+                  pending['target_id'] = previous.id;
+                  pending['requires_confirmation'] = true;
+                }
+              }
+              final target = _document.entries
+                  .where((entry) => entry.id == pending['target_id'])
+                  .firstOrNull;
+              pending['target_version'] = target?.version;
+              if (pending['action'] == 'add' &&
+                  procedureKey == null &&
                   proposal['requires_confirmation'] == false) {
                 _apply(pending);
               } else {
@@ -346,6 +507,9 @@ class LocalMemoryStore extends ChangeNotifier {
             _document.jobs.removeWhere((item) => item['source_id'] == id);
             _document.completed.add(id as String);
           });
+          debugPrint(
+            '[LocalMemory] extraction_applied proposals=${proposals.length} revision=${_document.revision}',
+          );
         });
       }
     } catch (failure) {
@@ -377,7 +541,13 @@ class LocalMemoryStore extends ChangeNotifier {
     }
     final text = (proposal['text'] as String).trim();
     if (_document.entries.any(
-      (entry) => entry.text == text && entry.category == proposal['category'],
+      (entry) =>
+          entry.text == text &&
+          entry.category == proposal['category'] &&
+          entry.subject == proposal['subject'] &&
+          (entry.category != 'episode' ||
+              (entry.eventAt ?? entry.sourceTime) ==
+                  (proposal['event_at'] ?? proposal['source_time'])),
     )) {
       return;
     }
@@ -394,7 +564,19 @@ class LocalMemoryStore extends ChangeNotifier {
       'source_text': proposal['source_text'],
       'thread_id': proposal['thread_id'],
       'source_time': proposal['source_time'],
+      'fact_key': proposal['fact_key'] ?? previous?.factKey,
+      'subject': proposal['subject'] ?? previous?.subject,
+      'topic': proposal['topic'] ?? previous?.topic,
+      'event_at': proposal['event_at'] ?? previous?.eventAt,
+      'procedure_key': proposal['procedure_key'] ?? previous?.procedureKey,
     }, text);
+    if (entry.factIdentity != null &&
+        _document.entries.any(
+          (item) =>
+              item.id != entry.id && item.factIdentity == entry.factIdentity,
+        )) {
+      throw StateError('同一事实已保存，请在记忆详情里更新');
+    }
     _document.entries.removeWhere((item) => item.id == entry.id);
     _document.entries.add(entry);
   }
@@ -405,19 +587,33 @@ class LocalMemoryStore extends ChangeNotifier {
         .where((item) => item['id'] == id)
         .firstOrNull;
     if (proposal == null) throw StateError('候选已处理，请刷新后查看');
-    if (approved &&
-        (proposal['epoch'] != _document.epoch ||
-            proposal['base_revision'] != _document.revision - 1)) {
-      throw StateError('候选生成后记忆已变化，请重新整理或手动修改');
+    if (approved) {
+      final target = _document.entries
+          .where((entry) => entry.id == proposal['target_id'])
+          .firstOrNull;
+      final requiresCurrentRevision =
+          proposal['action'] == 'clear' ||
+          !proposal.containsKey('target_version');
+      final stale = requiresCurrentRevision
+          ? proposal['base_revision'] != _document.revision - 1
+          : proposal['target_id'] != null &&
+                (target == null ||
+                    target.version != proposal['target_version']);
+      if (proposal['epoch'] != _document.epoch || stale) {
+        throw StateError('候选生成后记忆已变化，请重新整理或手动修改');
+      }
     }
     await _change(() {
       if (approved) _apply(proposal);
-      if (approved) {
+      if (approved && proposal['action'] != 'add') {
         _invalidate();
       } else {
         _document.pending.removeWhere((item) => item['id'] == id);
       }
     });
+    debugPrint(
+      '[LocalMemory] proposal_reviewed approved=$approved revision=${_document.revision}',
+    );
   });
 
   Future<String> exportMarkdown() => _serial(() async {
