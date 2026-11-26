@@ -1556,14 +1556,6 @@ class _ConversationPreferences extends StatelessWidget {
               ),
             ],
           ),
-          if (selectedAgent?.id == 'mem0-chatbot') ...[
-            const SizedBox(height: 8),
-            Text(
-              'Mem0 记忆状态可在聊天记录中查看',
-              style: Theme.of(context).textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
-          ],
           if (selectedVoiceOption != null) ...[
             const SizedBox(height: 8),
             Align(
@@ -1902,8 +1894,6 @@ class _MessageBubble extends StatelessWidget {
                   color: palette.ink,
                 ),
               ),
-              if (!human && entry.memoryStatus != null)
-                MemoryStatusNote(status: entry.memoryStatus!),
               if (!human && entry.videoResults != null)
                 VideoResultList(
                   results: entry.videoResults!,

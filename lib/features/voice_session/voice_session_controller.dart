@@ -153,7 +153,7 @@ class VoiceSessionController extends ChangeNotifier {
   bool _usingLocalMemory = false;
   String? get localMemorySummary => !_usingLocalMemory || _localMemory == null
       ? null
-      : '本机记忆 ${_localMemory!.entries.length} 条 · 待确认 ${_localMemory!.pending.length} 项 · 待整理 ${_localMemory!.queued} 项';
+      : '长期记忆 ${_localMemory!.entries.length} 条 · 待确认 ${_localMemory!.pending.length} 项 · 待整理 ${_localMemory!.queued} 项';
 
   void _memoryChanged() {
     if (!_disposed) notifyListeners();
@@ -162,7 +162,7 @@ class VoiceSessionController extends ChangeNotifier {
   Future<void> _prepareLocalMemory() async {
     if (_capabilities?.localMemory != true || _config.userId.isEmpty) {
       _usingLocalMemory = false;
-      localMemoryNotice = '当前后端未提供本机记忆协议，本次使用原有服务端记忆；升级后端后可使用本机 MD';
+      localMemoryNotice = '当前服务不支持在对话中使用手机上的长期记忆';
       return;
     }
     final store = LocalMemoryStore.forConfig(_config);
@@ -170,15 +170,13 @@ class VoiceSessionController extends ChangeNotifier {
     _localMemory?.removeListener(_memoryChanged);
     _localMemory = store;
     store.addListener(_memoryChanged);
-    _usingLocalMemory = store.mode == 'local';
-    if (_usingLocalMemory) {
-      unawaited(
-        store.process(
-          _api.extractLocalMemories,
-          version: _capabilities?.localMemoryVersion ?? 1,
-        ),
-      );
-    }
+    _usingLocalMemory = true;
+    unawaited(
+      store.process(
+        _api.extractLocalMemories,
+        version: _capabilities?.localMemoryVersion ?? 1,
+      ),
+    );
   }
 
   bool canConfirmMemory(String? id) {
@@ -926,9 +924,7 @@ class VoiceSessionController extends ChangeNotifier {
         wakeEngine: wakeActivation ? 'sherpa-onnx-1.13.8' : null,
         preRollSamples: wakeActivation ? _wakePreRollSamples : null,
         inputMode: inputMode,
-        memoryMode: capabilities.localMemory
-            ? (_usingLocalMemory ? 'local' : 'mem0')
-            : null,
+        memoryMode: _usingLocalMemory ? 'local' : null,
       );
       ensureCurrent();
       _session = pendingSession;
@@ -1349,7 +1345,7 @@ class VoiceSessionController extends ChangeNotifier {
             }),
           );
         } catch (_) {
-          localMemoryNotice = '本机记忆暂不可读取，本轮不会使用 Mem0 替代';
+          localMemoryNotice = '本轮读取长期记忆失败，回答可能缺少个人上下文';
           if (socket == _socket) {
             socket.sendJson(
               clientEvent('memory.context', {
@@ -1361,7 +1357,7 @@ class VoiceSessionController extends ChangeNotifier {
           notifyListeners();
         }
       case 'memory.context.unavailable':
-        localMemoryNotice = '本轮未及时取得本机记忆，回答可能缺少个人上下文';
+        localMemoryNotice = '本轮未及时取得长期记忆，回答可能缺少个人上下文';
         notifyListeners();
       case 'input.accepted':
         final store = _localMemory;
@@ -1384,7 +1380,7 @@ class VoiceSessionController extends ChangeNotifier {
             ),
           );
         } catch (_) {
-          localMemoryNotice = '本次记忆任务未保存，请到本机记忆页核对';
+          localMemoryNotice = '本次记忆任务未保存，请到长期记忆页核对';
           notifyListeners();
         }
       case 'session.ready':

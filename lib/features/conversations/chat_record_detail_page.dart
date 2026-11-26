@@ -295,8 +295,6 @@ class _MessageBubble extends StatelessWidget {
                 baseUrl: config.baseUrl,
                 style: TextStyle(color: palette.ink, fontSize: 13, height: 1.6),
               ),
-              if (!human && message.memoryStatus != null)
-                MemoryStatusNote(status: message.memoryStatus!),
               if (!human && message.videoResults != null)
                 VideoResultList(results: message.videoResults!, config: config)
               else if (!human && message.video != null)
@@ -349,8 +347,6 @@ class _MessageBubble extends StatelessWidget {
                 baseUrl: config.baseUrl,
                 style: TextStyle(color: palette.ink, fontSize: 15, height: 1.7),
               ),
-              if (!human && message.memoryStatus != null)
-                MemoryStatusNote(status: message.memoryStatus!),
               if (!human && message.videoResults != null)
                 VideoResultList(results: message.videoResults!, config: config)
               else if (!human && message.video != null)

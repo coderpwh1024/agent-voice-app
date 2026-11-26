@@ -54,7 +54,7 @@ class CapabilitiesController extends VoiceSessionController {
 
 void main() {
   testWidgets(
-    'home follows the server Mem0 default and respects an explicit legacy selection',
+    'home preserves assistant selection without showing legacy implementation names',
     (tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1;
@@ -98,7 +98,10 @@ void main() {
             .initialValue,
         'mem0-chatbot',
       );
-      expect(find.textContaining('Mem0'), findsWidgets);
+      expect(
+        find.textContaining(RegExp('mem0', caseSensitive: false)),
+        findsNothing,
+      );
       expect(tester.getSize(agentField()).width, greaterThan(300));
       await tester.tap(find.byTooltip('关闭对话偏好'));
       await tester.pumpAndSettle();
@@ -118,8 +121,11 @@ void main() {
       await tester.ensureVisible(agentField());
       await tester.tap(agentField());
       await tester.pump(const Duration(milliseconds: 400));
-      expect(find.textContaining('Mem0'), findsWidgets);
-      await tester.tap(find.text('小美').last);
+      expect(
+        find.textContaining(RegExp('mem0', caseSensitive: false)),
+        findsNothing,
+      );
+      await tester.tap(find.text('小美 · 基础对话').last);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
       expect(

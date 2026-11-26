@@ -1,14 +1,13 @@
 import 'package:agent_voice_app/core/api/api_client.dart';
 import 'package:agent_voice_app/core/api/api_models.dart';
 import 'package:agent_voice_app/core/config/app_config.dart';
+import 'package:agent_voice_app/core/memory/local_memory_store.dart';
 import 'package:agent_voice_app/core/theme/app_theme.dart';
 import 'package:agent_voice_app/features/auth/auth_page.dart';
 import 'package:agent_voice_app/features/conversations/chat_record_detail_page.dart';
 import 'package:agent_voice_app/features/conversations/chat_records_page.dart';
 import 'package:agent_voice_app/features/conversations/personal_library_page.dart';
-import 'package:agent_voice_app/features/memories/memories_page.dart';
-import 'package:agent_voice_app/features/memories/memory_detail_page.dart';
-import 'package:agent_voice_app/features/memories/memory_history_page.dart';
+import 'package:agent_voice_app/features/memories/local_memories_page.dart';
 import 'package:agent_voice_app/features/profile/edit_profile_page.dart';
 import 'package:agent_voice_app/features/profile/profile_page.dart';
 import 'package:agent_voice_app/features/settings/settings_sheet.dart';
@@ -58,7 +57,8 @@ void main() {
       final abilities = await api.capabilities();
       final agentId = abilities.defaultAgentId ?? abilities.agents.first.id;
       final days = await api.chatRecords(agentId);
-      final memories = await api.memories();
+      final localMemories = LocalMemoryStore.forConfig(config);
+      await localMemories.load();
       final voice = _VoicePreview(config: config, abilities: abilities);
       addTearDown(voice.dispose);
       var converted = false;
@@ -137,19 +137,16 @@ void main() {
           ChatRecordDetailPage(api: api, agentId: agentId, record: days.first),
         );
       }
-      await capture('memories', MemoriesPage(config: config, api: api));
-      if (memories.items.isNotEmpty) {
-        final memory = memories.items.first;
-        await capture(
-          'memory-detail',
-          MemoryDetailPage(api: api, memoryId: memory.id),
-        );
-        await capture('memory-edit', MemoryEditPage(api: api, record: memory));
-        await capture(
-          'memory-history',
-          MemoryHistoryPage(api: api, memoryId: memory.id),
-        );
-      }
+      await capture(
+        'memories',
+        LocalMemoriesPage(config: config, store: localMemories, api: api),
+      );
+      await tester.tap(find.byTooltip('添加记忆'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await binding.takeScreenshot('memory-editor');
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
       await capture(
         'settings',
         Scaffold(
@@ -179,7 +176,7 @@ void main() {
       );
       await capture(
         'memories-dark',
-        MemoriesPage(config: config, api: api),
+        LocalMemoriesPage(config: config, store: localMemories, api: api),
         dark: true,
       );
       binding.reportData ??= {};
@@ -191,7 +188,8 @@ void main() {
         'memory_modified': false,
         'base_url': config.baseUrl,
         'light_and_dark': true,
-        'memory_detail_available': memories.items.isNotEmpty,
+        'layered_memory_available':
+            abilities.localMemoryVersion == 2 && abilities.localMemory,
         'chat_detail_available': days.isNotEmpty,
       });
       await tester.pumpWidget(const SizedBox.shrink());

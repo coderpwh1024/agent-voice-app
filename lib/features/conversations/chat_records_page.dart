@@ -4,7 +4,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/api_models.dart';
 import '../../core/api/chat_record_models.dart';
 import '../../core/config/app_config.dart';
-import '../memories/memories_page.dart';
+import '../memories/local_memories_page.dart';
 import 'chat_record_detail_page.dart';
 import 'chat_record_widgets.dart';
 
@@ -109,7 +109,7 @@ class _ChatRecordsPageState extends State<ChatRecordsPage> {
             tooltip: '查看长期记忆',
             onPressed: () => Navigator.of(context).push<void>(
               MaterialPageRoute(
-                builder: (_) => MemoriesPage(config: widget.config, api: _api),
+                builder: (_) => LocalMemoriesPage(config: widget.config),
               ),
             ),
             icon: const Icon(Icons.bookmark_border_rounded),

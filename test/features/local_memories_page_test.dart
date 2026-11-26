@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:agent_voice_app/core/config/app_config.dart';
+import 'package:agent_voice_app/core/api/voice_protocol.dart';
+import 'package:agent_voice_app/core/memory/local_memory.dart';
 import 'package:agent_voice_app/core/memory/local_memory_store.dart';
 import 'package:agent_voice_app/core/theme/app_theme.dart';
 import 'package:agent_voice_app/features/memories/local_memories_page.dart';
@@ -33,7 +35,11 @@ void main() {
           () => Directory.systemTemp.createTemp('local-memory-ui-'),
         ))!;
         final store = LocalMemoryStore(directory: () async => folder);
-        await tester.runAsync(() => store.save('请叫我小林，回答尽量简短。', 'profile'));
+        await tester.runAsync(() async {
+          await store.save('请叫我小林，回答尽量简短。', 'profile');
+          await store.save(imageReviewFirstText, 'procedure');
+          await store.recordImageSelection(sourceId: newEventId(), imageId: 12);
+        });
         addTearDown(() async {
           store.dispose();
           await folder.delete(recursive: true);
@@ -94,7 +100,17 @@ void main() {
         );
         await tester.pumpWidget(page(store));
         await tester.pumpAndSettle();
-        expect(find.text('本机记忆'), findsOneWidget);
+        expect(find.text('长期记忆'), findsOneWidget);
+        expect(find.text('3 条已保存记忆'), findsOneWidget);
+        expect(
+          find.textContaining(RegExp('mem0', caseSensitive: false)),
+          findsNothing,
+        );
+        for (final label in ['添加记忆', '记忆管理']) {
+          final size = tester.getSize(find.byTooltip(label));
+          expect(size.width, greaterThanOrEqualTo(48));
+          expect(size.height, greaterThanOrEqualTo(48));
+        }
         expect(tester.takeException(), isNull);
         await screenshot('overview');
         final scroller = find
@@ -104,57 +120,73 @@ void main() {
             )
             .first;
         await tester.scrollUntilVisible(
+          find.text('语义记忆'),
+          200,
+          scrollable: scroller,
+        );
+        await tester.scrollUntilVisible(
           find.text('请叫我小林，回答尽量简短。'),
           400,
           scrollable: scroller,
         );
         expect(find.text('请叫我小林，回答尽量简短。'), findsOneWidget);
+        final profileId = store.entries
+            .singleWhere((entry) => entry.category == 'profile')
+            .id;
+        Finder profileAction(String label) => find.descendant(
+          of: find.byKey(ValueKey(profileId)),
+          matching: find.text(label),
+        );
         await tester.dragUntilVisible(
-          find.text('编辑').hitTestable(),
+          profileAction('编辑').hitTestable(),
           scroller,
           const Offset(0, -200),
         );
         await tester.pumpAndSettle();
         await screenshot('entry');
-        await tester.tap(find.text('编辑'));
+        await tester.tap(profileAction('编辑'));
         await tester.pumpAndSettle();
         await screenshot('editor');
         await tester.enterText(find.byType(TextField).last, '回答时先给结论。');
+        tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+        addTearDown(tester.view.resetViewInsets);
+        await tester.pumpAndSettle();
+        expect(find.text('保存到手机').hitTestable(), findsOneWidget);
         await tester.tap(find.text('保存到手机'));
+        tester.view.resetViewInsets();
         await tester.pumpAndSettle();
-        await tester.runAsync(() async {
-          for (
-            var i = 0;
-            i < 50 &&
-                !(await File(
-                  '${folder.path}/MEMORY.md',
-                ).readAsString()).contains('回答时先给结论。');
-            i++
-          ) {
-            await Future<void>.delayed(const Duration(milliseconds: 10));
-          }
-        });
-        await tester.pumpAndSettle();
-        expect(store.entries.single.text, '回答时先给结论。');
+        final file = File('${folder.path}/MEMORY.md');
         for (var attempt = 0; attempt < 50; attempt++) {
-          await tester.runAsync(
-            () => Future<void>.delayed(const Duration(milliseconds: 10)),
-          );
+          final written = await tester.runAsync(() async {
+            await Future<void>.delayed(const Duration(milliseconds: 10));
+            return (await file.readAsString()).contains('回答时先给结论。');
+          });
           await tester.pump();
-          if (tester
-                  .widget<TextButton>(find.widgetWithText(TextButton, '忘记'))
-                  .onPressed !=
-              null) {
-            break;
-          }
+          if (written == true) break;
         }
-        await tester.dragUntilVisible(
-          find.text('忘记').hitTestable(),
-          scroller,
-          const Offset(0, -200),
+        await tester.pumpAndSettle();
+        expect(
+          store.entries
+              .singleWhere((entry) => entry.category == 'profile')
+              .text,
+          '回答时先给结论。',
+        );
+        tester.state<ScrollableState>(scroller).position.jumpTo(0);
+        await tester.pump();
+        await tester.scrollUntilVisible(
+          profileAction('忘记'),
+          200,
+          scrollable: scroller,
+        );
+        await Scrollable.ensureVisible(
+          tester.element(profileAction('忘记')),
+          alignment: .5,
         );
         await tester.pumpAndSettle();
-        final forget = find.widgetWithText(TextButton, '忘记');
+        final forget = find.ancestor(
+          of: profileAction('忘记'),
+          matching: find.byWidgetPredicate((widget) => widget is TextButton),
+        );
         expect(
           tester.widget<TextButton>(forget).onPressed,
           isNotNull,
@@ -166,14 +198,34 @@ void main() {
         await screenshot('confirmation');
         await tester.tap(find.text('取消'));
         await tester.pumpAndSettle();
-        expect(store.entries, hasLength(1));
+        expect(store.entries, hasLength(3));
+        await tester.scrollUntilVisible(
+          find.text('过去发生的事'),
+          200,
+          scrollable: scroller,
+        );
+        await tester.scrollUntilVisible(
+          find.textContaining('发生于 '),
+          200,
+          scrollable: scroller,
+        );
+        expect(find.text('已采用 12 号图片并结束该次编辑。'), findsOneWidget);
+        await screenshot('episode');
+        await tester.scrollUntilVisible(
+          find.text(imageReviewFirstText),
+          200,
+          scrollable: scroller,
+        );
+        expect(find.text('可反复使用的流程'), findsOneWidget);
         expect(tester.takeException(), isNull);
         await tester.runAsync(store.clear);
         await tester.pumpAndSettle();
-        await tester.dragUntilVisible(
-          find.text('这里还没有匹配的记忆。可以手动添加，也可以在聊天后回来查看。').hitTestable(),
-          scroller,
-          const Offset(0, -200),
+        tester.state<ScrollableState>(scroller).position.jumpTo(0);
+        await tester.pump();
+        await tester.scrollUntilVisible(
+          find.text('还没有记忆'),
+          200,
+          scrollable: scroller,
         );
         await screenshot('empty');
         final unreadable = LocalMemoryStore(

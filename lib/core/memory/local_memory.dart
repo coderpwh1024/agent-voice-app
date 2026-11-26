@@ -140,7 +140,6 @@ class DeviceMemoryDocument {
     this.epoch = 0,
     this.automatic = true,
     this.useMemory = true,
-    this.mode = 'local',
     List<DeviceMemoryEntry>? entries,
     List<Map<String, dynamic>>? jobs,
     List<Map<String, dynamic>>? pending,
@@ -152,7 +151,6 @@ class DeviceMemoryDocument {
 
   int revision, epoch;
   bool automatic, useMemory;
-  String mode;
   final List<DeviceMemoryEntry> entries;
   final List<Map<String, dynamic>> jobs, pending;
   final List<String> completed;
@@ -164,7 +162,7 @@ class DeviceMemoryDocument {
       'epoch': epoch,
       'automatic': automatic,
       'use_memory': useMemory,
-      'mode': mode,
+      'mode': 'local',
       'entries': entries.map((entry) => entry.metadata).toList(),
       if (!backup) 'jobs': jobs,
       if (!backup) 'pending': pending,
@@ -219,7 +217,8 @@ class DeviceMemoryDocument {
     }
     final revision = header['revision'] as int? ?? 0;
     final epoch = header['epoch'] as int? ?? 0;
-    final mode = header['mode'] as String? ?? 'local';
+    // Older files may contain the retired server mode.
+    final mode = header['mode'] ?? 'local';
     if (revision < 0 || epoch < 0 || !['local', 'mem0'].contains(mode)) {
       throw const FormatException('记忆版本或模式无效');
     }
@@ -228,7 +227,6 @@ class DeviceMemoryDocument {
       epoch: epoch,
       automatic: header['automatic'] as bool? ?? true,
       useMemory: header['use_memory'] as bool? ?? true,
-      mode: mode,
       entries: entries,
       jobs: (header['jobs'] as List? ?? [])
           .map((item) => Map<String, dynamic>.from(item as Map))

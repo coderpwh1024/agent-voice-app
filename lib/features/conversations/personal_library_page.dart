@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/api_models.dart';
 import '../../core/config/app_config.dart';
-import '../memories/memories_page.dart';
 import '../memories/local_memories_page.dart';
 import '../videos/video_studio_page.dart';
 import 'chat_record_widgets.dart';
@@ -68,29 +67,13 @@ class PersonalLibraryPage extends StatelessWidget {
             ),
             const SizedBox(height: 14),
             _CollectionCard(
-              title: '本机记忆',
-              eyebrow: 'ON YOUR DEVICE',
-              description: 'Markdown 正文保存在手机。\n查看来源、确认候选，随时编辑与导出。',
-              tag: '首选 · 本机 MD',
+              title: '长期记忆',
+              description: '查看事实与偏好、过往事件和常用流程。记忆保存在这部手机。',
               icon: Icons.bookmark_border_rounded,
               color: palette.blush,
               onTap: () => Navigator.of(context).push<void>(
                 MaterialPageRoute(
                   builder: (_) => LocalMemoriesPage(config: config),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _CollectionCard(
-              title: '长期记忆',
-              eyebrow: 'MEMORY',
-              description: '小美记住的偏好与习惯。\n随时查看、修改，或让它忘记。',
-              tag: 'Mem0 · 小美',
-              icon: Icons.bookmark_border_rounded,
-              color: palette.lavender,
-              onTap: () => Navigator.of(context).push<void>(
-                MaterialPageRoute(
-                  builder: (_) => MemoriesPage(config: config, api: api),
                 ),
               ),
             ),
@@ -133,17 +116,17 @@ class PersonalLibraryPage extends StatelessWidget {
 class _CollectionCard extends StatelessWidget {
   const _CollectionCard({
     required this.title,
-    required this.eyebrow,
+    this.eyebrow,
     required this.description,
-    required this.tag,
+    this.tag,
     required this.icon,
     required this.color,
     required this.onTap,
   });
   final String title;
-  final String eyebrow;
+  final String? eyebrow;
   final String description;
-  final String tag;
+  final String? tag;
   final IconData icon;
   final Color color;
   final VoidCallback onTap;
@@ -180,15 +163,17 @@ class _CollectionCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          eyebrow,
-                          style: TextStyle(
-                            color: palette.muted,
-                            fontSize: 10,
-                            letterSpacing: 1.6,
+                        if (eyebrow case final label?) ...[
+                          Text(
+                            label,
+                            style: TextStyle(
+                              color: palette.muted,
+                              fontSize: 10,
+                              letterSpacing: 1.6,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 5),
+                          const SizedBox(height: 5),
+                        ],
                         Text(
                           title,
                           style: TextStyle(
@@ -213,8 +198,10 @@ class _CollectionCard extends StatelessWidget {
                 description,
                 style: TextStyle(color: palette.muted, height: 1.7),
               ),
-              const SizedBox(height: 16),
-              RecordTag(label: tag),
+              if (tag case final label?) ...[
+                const SizedBox(height: 16),
+                RecordTag(label: label),
+              ],
             ],
           ),
         ),

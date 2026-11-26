@@ -232,11 +232,27 @@ void main() {
       expect(store.entries.single.text, '简短回答');
       await expectLater(store.importMarkdown('损坏的文件'), throwsFormatException);
       expect(store.entries.single.text, '简短回答');
-      await store.configure(mode: 'mem0');
+    },
+  );
+
+  test(
+    'previous server-mode files retain entries and resume local memory',
+    () async {
+      await store.save('简短回答', 'profile');
+      final file = File('${directory.path}/MEMORY.md');
+      final previous = (await file.readAsString()).replaceFirst(
+        '"mode":"local"',
+        '"mode":"mem0"',
+      );
+      await file.writeAsString(previous);
       final restored = LocalMemoryStore(directory: () async => directory);
       addTearDown(restored.dispose);
       await restored.load();
-      expect(restored.mode, 'mem0');
+      expect(await file.readAsString(), previous);
+      expect(restored.entries.single.text, '简短回答');
+      await restored.enqueue(sourceId: newEventId(), text: '平时喜欢喝咖啡');
+      expect(restored.queued, 1);
+      expect(await file.readAsString(), contains('"mode":"local"'));
     },
   );
 

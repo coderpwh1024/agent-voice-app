@@ -7,9 +7,20 @@ import '../../core/api/api_client.dart';
 import '../../core/config/app_config.dart';
 import '../../core/memory/local_memory.dart';
 import '../../core/memory/local_memory_store.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/theme/editorial_widgets.dart';
 import '../conversations/chat_record_widgets.dart';
-import 'memories_page.dart';
 import 'memory_widgets.dart';
+
+const _layers = [
+  (
+    title: '语义记忆',
+    description: '当前的事实与偏好',
+    categories: ['profile', 'person', 'project'],
+  ),
+  (title: '情景记忆', description: '过去发生的事', categories: ['episode']),
+  (title: '程序记忆', description: '可反复使用的流程', categories: ['procedure']),
+];
 
 class LocalMemoriesPage extends StatefulWidget {
   const LocalMemoriesPage({
@@ -30,7 +41,7 @@ class LocalMemoriesPage extends StatefulWidget {
 class _LocalMemoriesPageState extends State<LocalMemoriesPage> {
   late final LocalMemoryStore _store;
   late final AgentApiClient _api;
-  bool _loading = true, _busy = false;
+  bool _loading = false, _busy = false;
   String? _error;
   String _query = '', _category = 'all';
 
@@ -40,8 +51,7 @@ class _LocalMemoriesPageState extends State<LocalMemoriesPage> {
     _store = widget.store ?? LocalMemoryStore.forConfig(widget.config);
     _api = widget.api ?? AgentApiClient(widget.config);
     _store.addListener(_changed);
-    _loading = !_store.isLoaded;
-    if (_loading) unawaited(_load());
+    if (!_store.isLoaded) unawaited(_load());
   }
 
   void _changed() {
@@ -49,11 +59,15 @@ class _LocalMemoriesPageState extends State<LocalMemoriesPage> {
   }
 
   Future<void> _load() async {
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       await _store.load();
-      if (mounted) setState(() => _error = null);
     } catch (_) {
-      if (mounted) setState(() => _error = '无法读取本机记忆文件，请重试。原文件不会被覆盖。');
+      if (mounted) setState(() => _error = '无法读取手机上的记忆文件，请重试。');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -77,9 +91,11 @@ class _LocalMemoriesPageState extends State<LocalMemoriesPage> {
     } catch (error) {
       if (mounted) {
         setState(
-          () => _error = error is StateError || error is FormatException
-              ? error.toString()
-              : '操作未完成，请核对后重试',
+          () => _error = switch (error) {
+            StateError(:final message) => message,
+            FormatException(:final message) => message,
+            _ => '操作未完成，请核对后重试',
+          },
         );
       }
     } finally {
@@ -87,18 +103,29 @@ class _LocalMemoriesPageState extends State<LocalMemoriesPage> {
     }
   }
 
-  Future<bool> _confirm(String title, String message) async =>
+  Future<bool> _confirm(
+    String title,
+    String message, {
+    bool destructive = false,
+  }) async =>
       await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           title: Text(title),
-          content: SingleChildScrollView(child: Text(message)),
+          content: Text(message),
+          scrollable: true,
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
               child: const Text('取消'),
             ),
             FilledButton(
+              style: destructive
+                  ? FilledButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.error,
+                      foregroundColor: Theme.of(context).colorScheme.onError,
+                    )
+                  : null,
               onPressed: () => Navigator.pop(context, true),
               child: const Text('确认'),
             ),
@@ -114,7 +141,7 @@ class _LocalMemoriesPageState extends State<LocalMemoriesPage> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text(entry == null ? '添加本机记忆' : '编辑本机记忆'),
+          title: Text(entry == null ? '添加记忆' : '编辑记忆'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -139,6 +166,7 @@ class _LocalMemoriesPageState extends State<LocalMemoriesPage> {
                 else
                   TextField(
                     controller: editor,
+                    onChanged: (_) => setDialogState(() {}),
                     minLines: 3,
                     maxLines: 8,
                     maxLength: 1000,
@@ -156,11 +184,10 @@ class _LocalMemoriesPageState extends State<LocalMemoriesPage> {
               child: const Text('取消'),
             ),
             FilledButton(
-              onPressed: () {
-                if (category == 'procedure' || editor.text.trim().isNotEmpty) {
-                  Navigator.pop(dialogContext, true);
-                }
-              },
+              onPressed:
+                  category == 'procedure' || editor.text.trim().isNotEmpty
+                  ? () => Navigator.pop(dialogContext, true)
+                  : null,
               child: const Text('保存到手机'),
             ),
           ],
@@ -255,295 +282,439 @@ class _LocalMemoriesPageState extends State<LocalMemoriesPage> {
         if ((proposal['text'] as String? ?? '').isNotEmpty)
           '内容：${proposal['text']}',
         '来源：${proposal['source_text']}',
-        '只处理本机记忆，聊天记录和 Mem0 备选数据保持各自的管理方式。',
+        if (action == 'delete' || action == 'clear') '历史对话会保留。',
       ].join('\n\n'),
+      destructive: action == 'delete' || action == 'clear',
     );
     if (accepted && mounted) {
       await _run(() => _store.review(proposal['id'] as String, true));
     }
   }
 
+  Future<void> _forget(DeviceMemoryEntry entry) async {
+    if (await _confirm(
+          '忘记这条信息',
+          '将从这部手机删除这条记忆，并取消当前待整理内容。历史对话会保留。',
+          destructive: true,
+        ) &&
+        mounted) {
+      await _run(() => _store.delete(entry));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final canManage = _store.isLoaded && !_busy;
+    final palette = AppPalette(context);
+    final muted = TextStyle(color: palette.muted, fontSize: 13, height: 1.6);
     final entries =
         _store.entries
-            .where(
-              (entry) =>
-                  (_category == 'all' || entry.category == _category) &&
-                  entry.text.toLowerCase().contains(_query.toLowerCase()),
-            )
+            .where((entry) => entry.text.toLowerCase().contains(_query))
             .toList()
           ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    final groups = [
+      for (final layer in _layers)
+        if (_category == 'all' ||
+            _category == layer.title ||
+            layer.categories.contains(_category))
+          (
+            layer: layer,
+            items: entries
+                .where(
+                  (entry) =>
+                      layer.categories.contains(entry.category) &&
+                      (_category == 'all' ||
+                          _category == layer.title ||
+                          _category == entry.category),
+                )
+                .toList(),
+          ),
+    ];
+    final hasMatches = groups.any((group) => group.items.isNotEmpty);
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('本机记忆'),
+        title: const Text('长期记忆'),
         actions: [
           IconButton(
             tooltip: '添加记忆',
-            onPressed: _busy || _loading || _error != null
-                ? null
-                : () => _edit(),
+            onPressed: canManage ? () => _edit() : null,
             icon: const Icon(Icons.bookmark_add_outlined),
           ),
           PopupMenuButton<String>(
-            tooltip: '本机记忆管理',
-            enabled: !_busy && !_loading && _error == null,
+            tooltip: '记忆管理',
+            enabled: canManage,
             onSelected: (value) async {
               if (value == 'export') await _export();
               if (value == 'import') await _import();
               if (value == 'clear' &&
-                  await _confirm('清空本机记忆', '将清空本机全部记忆和待整理内容，无法撤销。建议先导出备份。')) {
+                  await _confirm(
+                    '清空长期记忆',
+                    '将清空这部手机上的全部记忆和待整理内容，无法撤销。历史对话会保留。',
+                    destructive: true,
+                  ) &&
+                  mounted) {
                 await _run(_store.clear);
               }
             },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'export', child: Text('复制 Markdown 备份')),
-              PopupMenuItem(value: 'import', child: Text('导入 Markdown')),
-              PopupMenuItem(value: 'clear', child: Text('清空本机记忆')),
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'export',
+                child: Text('复制 Markdown 备份'),
+              ),
+              const PopupMenuItem(value: 'import', child: Text('导入 Markdown')),
+              PopupMenuItem(
+                value: 'clear',
+                child: Text(
+                  '清空长期记忆',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
             ],
           ),
         ],
       ),
       body: RecordLayout(
-        child: ListView(
-          padding: const EdgeInsets.all(24),
-          children: [
-            RecordHero(
-              eyebrow: 'MEMORY · ON YOUR DEVICE',
-              title: '记忆，留在你身边。',
-              description:
-                  '正文保存在手机的 MEMORY.md。\n聊天时仅提供筛选后的参考，整理新记忆时会将该条输入发送给服务端模型。',
-              icon: Icons.bookmark_border_rounded,
-              stats: [
-                '${_store.entries.length} 条记忆',
-                '${_store.pending.length} 项待确认',
-                '${_store.queued} 项待整理',
-              ],
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              '本机文件按账号与服务地址隔离，未开启云端备份。卸载或丢失手机可能丢失记忆，请定期导出。聊天记录仍按服务端原有规则保存。',
-              style: TextStyle(fontSize: 13, height: 1.6),
-            ),
-            if (_loading) const MemoryLoading(),
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              MemoryNotice(message: _error!, error: true),
-              TextButton(onPressed: _load, child: const Text('重新读取文件')),
-            ],
-            if (!_loading && _error == null) ...[
-              const SizedBox(height: 20),
-              DropdownButtonFormField<String>(
-                initialValue: _store.mode,
-                decoration: const InputDecoration(labelText: '下次连接使用的记忆方案'),
-                isExpanded: true,
-                items: const [
-                  DropdownMenuItem(
-                    value: 'local',
-                    child: Text('本机 Markdown（首选）'),
+        child: CustomScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+              sliver: SliverList.list(
+                children: [
+                  const EditorialHeading(
+                    eyebrow: '',
+                    title: '留在身边',
+                    subtitle: '事实、经历与常用流程，保存在这部手机。',
                   ),
-                  DropdownMenuItem(value: 'mem0', child: Text('服务端 Mem0（备选）')),
+                  if (_store.isLoaded) ...[
+                    const SizedBox(height: 12),
+                    Text('${_store.entries.length} 条已保存记忆', style: muted),
+                  ],
+                  const SizedBox(height: 20),
+                  if (_loading) const MemoryLoading(),
+                  if (_error case final message?) ...[
+                    MemoryNotice(message: message, error: true),
+                    const SizedBox(height: 12),
+                    if (!_store.isLoaded)
+                      OutlinedButton(
+                        onPressed: _load,
+                        child: const Text('重新读取文件'),
+                      ),
+                  ],
+                  if (_store.isLoaded) ...[
+                    ExpansionTile(
+                      tilePadding: EdgeInsets.zero,
+                      childrenPadding: const EdgeInsets.only(bottom: 16),
+                      title: const Text('记忆设置'),
+                      children: [
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('自动整理新记忆'),
+                          subtitle: const Text('关闭会取消待整理内容和候选，已保存记忆会保留。'),
+                          value: _store.automatic,
+                          onChanged: canManage
+                              ? (value) => _run(
+                                  () => _store.configure(automatic: value),
+                                )
+                              : null,
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('回答时使用长期记忆'),
+                          value: _store.useMemory,
+                          onChanged: canManage
+                              ? (value) => _run(
+                                  () => _store.configure(useMemory: value),
+                                )
+                              : null,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '正文保存在手机的 MEMORY.md。对话时发送相关参考，整理时发送该条输入。记忆没有云备份，可通过右上角菜单复制 Markdown 备份。',
+                          style: muted,
+                        ),
+                      ],
+                    ),
+                    const Divider(),
+                    if (_store.pending.isNotEmpty ||
+                        _store.queued > 0 ||
+                        _store.error != null) ...[
+                      const SizedBox(height: 20),
+                      Text(
+                        '待整理',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${_store.pending.length} 项待确认 · ${_store.queued} 项待提炼',
+                        style: muted,
+                      ),
+                      if (_store.error case final message?) ...[
+                        const SizedBox(height: 8),
+                        MemoryNotice(message: message, error: true),
+                      ],
+                      if (_store.queued > 0 || _store.error != null)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            onPressed: canManage
+                                ? () => _run(() async {
+                                    final capabilities = await _api
+                                        .capabilities();
+                                    if (!capabilities.localMemory) {
+                                      throw StateError('当前服务不支持整理手机上的长期记忆。');
+                                    }
+                                    await _store.process(
+                                      _api.extractLocalMemories,
+                                      version: capabilities.localMemoryVersion,
+                                    );
+                                  })
+                                : null,
+                            icon: const Icon(Icons.refresh_rounded, size: 18),
+                            label: const Text('重试整理'),
+                          ),
+                        ),
+                      for (final proposal in _store.pending)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: EditorialPanel(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  switch (proposal['action']) {
+                                    'clear' => '清空全部记忆',
+                                    'delete' => '删除记忆',
+                                    'update' => '修改记忆',
+                                    _ => '新增记忆',
+                                  },
+                                  style: Theme.of(context).textTheme.titleSmall,
+                                ),
+                                if ((proposal['text'] as String? ?? '')
+                                    .isNotEmpty) ...[
+                                  const SizedBox(height: 8),
+                                  SelectableText(proposal['text'] as String),
+                                ],
+                                const SizedBox(height: 8),
+                                Text(
+                                  '来源：${proposal['source_text']}',
+                                  style: muted,
+                                ),
+                                Wrap(
+                                  spacing: 8,
+                                  children: [
+                                    TextButton(
+                                      onPressed: canManage
+                                          ? () => _review(proposal)
+                                          : null,
+                                      child: const Text('查看并确认'),
+                                    ),
+                                    TextButton(
+                                      onPressed: canManage
+                                          ? () => _run(
+                                              () => _store.review(
+                                                proposal['id'] as String,
+                                                false,
+                                              ),
+                                            )
+                                          : null,
+                                      child: const Text('忽略候选'),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                    const SizedBox(height: 20),
+                    TextField(
+                      decoration: const InputDecoration(
+                        labelText: '搜索记忆',
+                        prefixIcon: Icon(Icons.search_rounded),
+                      ),
+                      onChanged: (value) =>
+                          setState(() => _query = value.trim().toLowerCase()),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: _category,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: '查看分类'),
+                      items: [
+                        const DropdownMenuItem(
+                          value: 'all',
+                          child: Text('全部记忆'),
+                        ),
+                        for (final layer in _layers) ...[
+                          DropdownMenuItem(
+                            value: layer.title,
+                            child: Text(layer.title),
+                          ),
+                          if (layer.categories.length > 1)
+                            for (final category in layer.categories)
+                              DropdownMenuItem(
+                                value: category,
+                                child: Text(memoryCategoryLabels[category]!),
+                              ),
+                        ],
+                      ],
+                      onChanged: (value) => setState(() => _category = value!),
+                    ),
+                    if (!hasMatches)
+                      RecordStatus(
+                        icon: Icons.bookmark_border_rounded,
+                        title: _category == 'all' && _query.isEmpty
+                            ? '还没有记忆'
+                            : '没有匹配的记忆',
+                        description: _category == 'all' && _query.isEmpty
+                            ? '可以手动添加，也可以在聊过之后回来看看。'
+                            : '试试其他关键词或分类。',
+                      ),
+                  ],
                 ],
-                onChanged: _busy
-                    ? null
-                    : (value) => _run(() => _store.configure(mode: value)),
               ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('自动整理新记忆'),
-                subtitle: const Text('关闭会取消待整理内容和候选，保留已保存记忆'),
-                value: _store.automatic,
-                onChanged: _busy
-                    ? null
-                    : (value) => _run(() => _store.configure(automatic: value)),
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('回答时使用本机记忆'),
-                value: _store.useMemory,
-                onChanged: _busy
-                    ? null
-                    : (value) => _run(() => _store.configure(useMemory: value)),
-              ),
-              if (_store.error != null)
-                MemoryNotice(message: _store.error!, error: true),
-              if (_store.queued > 0 || _store.error != null)
-                OutlinedButton.icon(
-                  onPressed: _busy
-                      ? null
-                      : () => _run(() async {
-                          final capabilities = await _api.capabilities();
-                          await _store.process(
-                            _api.extractLocalMemories,
-                            version: capabilities.localMemoryVersion,
-                          );
-                        }),
-                  icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('重试整理'),
-                ),
-              for (final proposal in _store.pending)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            '待确认',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            proposal['action'] == 'clear'
-                                ? '清空全部本机记忆'
-                                : (proposal['text'] as String? ?? '').isEmpty
-                                ? '删除选中的记忆'
-                                : proposal['text'] as String,
-                          ),
-                          const SizedBox(height: 8),
-                          Text('来源：${proposal['source_text']}'),
-                          Wrap(
-                            spacing: 12,
-                            children: [
-                              TextButton(
-                                onPressed: _busy
-                                    ? null
-                                    : () => _review(proposal),
-                                child: const Text('查看并确认'),
-                              ),
-                              TextButton(
-                                onPressed: _busy
-                                    ? null
-                                    : () => _run(
-                                        () => _store.review(
-                                          proposal['id'] as String,
-                                          false,
-                                        ),
-                                      ),
-                                child: const Text('忽略候选'),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              const SizedBox(height: 20),
-              TextField(
-                decoration: const InputDecoration(
-                  labelText: '搜索本机记忆',
-                  prefixIcon: Icon(Icons.search_rounded),
-                ),
-                onChanged: (value) => setState(() => _query = value),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: _category,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: '分类'),
-                items: ['all', ...memoryCategories]
-                    .map(
-                      (value) => DropdownMenuItem(
-                        value: value,
-                        child: Text(memoryCategoryLabels[value] ?? '全部'),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) => setState(() => _category = value!),
-              ),
-              const SizedBox(height: 16),
-              if (entries.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Text('这里还没有匹配的记忆。可以手动添加，也可以在聊天后回来查看。'),
-                ),
-              for (final entry in entries)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(18),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            memoryCategoryLabels[entry.category]!,
-                            style: Theme.of(context).textTheme.labelMedium,
-                          ),
-                          const SizedBox(height: 10),
-                          SelectableText(
-                            entry.text,
-                            style: const TextStyle(fontSize: 16, height: 1.65),
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            '更新于 ${memoryDateLabel(entry.updatedAt)} · 第 ${entry.version} 版',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                          if (entry.sourceText != null) ...[
-                            const SizedBox(height: 10),
-                            SelectableText('原文证据：${entry.sourceText}'),
-                          ],
-                          if (entry.threadId != null)
-                            SelectableText(
-                              '来源对话：${entry.threadId}',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          if (entry.sourceTime != null)
-                            Text(
-                              '来源时间：${memoryDateLabel(entry.sourceTime!)}',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          Wrap(
-                            spacing: 12,
-                            children: [
-                              TextButton.icon(
-                                onPressed: _busy ? null : () => _edit(entry),
-                                icon: const Icon(Icons.edit_outlined),
-                                label: const Text('编辑'),
-                              ),
-                              TextButton.icon(
-                                onPressed: _busy
-                                    ? null
-                                    : () async {
-                                        if (await _confirm(
-                                          '忘记这条信息',
-                                          '将从本机记忆移除，并取消当前待整理内容，防止旧任务重新写回。历史对话仍保留。',
-                                        )) {
-                                          await _run(
-                                            () => _store.delete(entry),
-                                          );
-                                        }
-                                      },
-                                icon: const Icon(Icons.delete_outline_rounded),
-                                label: const Text('忘记'),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-            const SizedBox(height: 20),
-            OutlinedButton.icon(
-              onPressed: _busy
-                  ? null
-                  : () => Navigator.of(context).push<void>(
-                      MaterialPageRoute(
-                        builder: (_) => MemoriesPage(config: widget.config),
-                      ),
-                    ),
-              icon: const Icon(Icons.cloud_outlined),
-              label: const Text('管理 Mem0 备选记忆'),
             ),
+            if (_store.isLoaded &&
+                (hasMatches || (_query.isEmpty && _category == 'all')))
+              for (final group in groups)
+                if (group.items.isNotEmpty ||
+                    (_query.isEmpty && _category == 'all'))
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+                    sliver: SliverMainAxisGroup(
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Wrap(
+                                spacing: 12,
+                                runSpacing: 4,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Semantics(
+                                    header: true,
+                                    child: Text(
+                                      group.layer.title,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleMedium,
+                                    ),
+                                  ),
+                                  Text('${group.items.length} 条', style: muted),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(group.layer.description, style: muted),
+                              const SizedBox(height: 12),
+                              const Divider(),
+                            ],
+                          ),
+                        ),
+                        SliverList.builder(
+                          itemCount: group.items.length,
+                          itemBuilder: (context, index) {
+                            final entry = group.items[index];
+                            return _MemoryEntry(
+                              key: ValueKey(entry.id),
+                              entry: entry,
+                              onEdit: canManage ? () => _edit(entry) : null,
+                              onForget: canManage ? () => _forget(entry) : null,
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+            const SliverToBoxAdapter(child: SizedBox(height: 32)),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _MemoryEntry extends StatelessWidget {
+  const _MemoryEntry({
+    super.key,
+    required this.entry,
+    required this.onEdit,
+    required this.onForget,
+  });
+
+  final DeviceMemoryEntry entry;
+  final VoidCallback? onEdit;
+  final VoidCallback? onForget;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AppPalette(context);
+    final metadata = TextStyle(color: palette.muted, fontSize: 12, height: 1.6);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 16),
+        Text(
+          memoryCategoryLabels[entry.category]!,
+          style: metadata.copyWith(
+            color: palette.accentInk,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 6),
+        SelectableText(
+          entry.text,
+          style: const TextStyle(fontSize: 16, height: 1.65),
+        ),
+        const SizedBox(height: 8),
+        if (entry.eventAt case final occurredAt?)
+          Text('发生于 ${memoryDateLabel(occurredAt)}', style: metadata),
+        Text(
+          '更新于 ${memoryDateLabel(entry.updatedAt)} · 第 ${entry.version} 版',
+          style: metadata,
+        ),
+        if (entry.sourceText != null ||
+            entry.threadId != null ||
+            entry.sourceTime != null)
+          ExpansionTile(
+            key: PageStorageKey('source-${entry.id}'),
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: const EdgeInsets.only(bottom: 8),
+            expandedCrossAxisAlignment: CrossAxisAlignment.start,
+            expandedAlignment: Alignment.centerLeft,
+            title: const Text('查看来源'),
+            children: [
+              if (entry.sourceText case final source?) SelectableText(source),
+              if (entry.threadId case final thread?)
+                SelectableText('来源对话：$thread', style: metadata),
+              if (entry.sourceTime case final time?)
+                Text('来源时间：${memoryDateLabel(time)}', style: metadata),
+            ],
+          ),
+        Wrap(
+          spacing: 8,
+          children: [
+            TextButton.icon(
+              onPressed: onEdit,
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              label: const Text('编辑'),
+            ),
+            TextButton.icon(
+              onPressed: onForget,
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error,
+              ),
+              icon: const Icon(Icons.delete_outline_rounded, size: 18),
+              label: const Text('忘记'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        const Divider(),
+      ],
     );
   }
 }

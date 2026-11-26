@@ -72,7 +72,6 @@ class LocalMemoryStore extends ChangeNotifier {
   int get queued => _document.jobs.length;
   bool get automatic => _document.automatic;
   bool get useMemory => _document.useMemory;
-  String get mode => _document.mode;
   int get revision => _document.revision;
   bool get isLoaded => _loaded;
 
@@ -246,21 +245,14 @@ class LocalMemoryStore extends ChangeNotifier {
     };
   }
 
-  Future<void> configure({bool? automatic, bool? useMemory, String? mode}) =>
+  Future<void> configure({bool? automatic, bool? useMemory}) =>
       _serial(() async {
         await _load();
-        if (mode != null && !['local', 'mem0'].contains(mode)) {
-          throw ArgumentError('无效的记忆模式');
-        }
         await _change(() {
           if (automatic != null) _document.automatic = automatic;
           if (useMemory != null && useMemory != _document.useMemory) {
             _invalidate();
             _document.useMemory = useMemory;
-          }
-          if (mode != null && mode != _document.mode) {
-            _invalidate();
-            _document.mode = mode;
           }
           if (automatic == false) {
             _invalidate();
@@ -341,7 +333,6 @@ class LocalMemoryStore extends ChangeNotifier {
   }) => _serial(() async {
     await _load();
     if (!_document.automatic ||
-        _document.mode != 'local' ||
         text.trim().isEmpty ||
         text.runes.length > 6000) {
       return;
@@ -380,7 +371,6 @@ class LocalMemoryStore extends ChangeNotifier {
   }) => _serial(() async {
     await _load();
     if (!_document.automatic ||
-        _document.mode != 'local' ||
         !memoryIdPattern.hasMatch(sourceId) ||
         imageId <= 0 ||
         _document.entries.any((entry) => entry.sourceId == sourceId) ||
@@ -415,9 +405,7 @@ class LocalMemoryStore extends ChangeNotifier {
       while (true) {
         final job = await _serial(() async {
           await _load();
-          if (!_document.automatic ||
-              _document.mode != 'local' ||
-              _document.jobs.isEmpty) {
+          if (!_document.automatic || _document.jobs.isEmpty) {
             return null;
           }
           return Map<String, dynamic>.from(_document.jobs.first);

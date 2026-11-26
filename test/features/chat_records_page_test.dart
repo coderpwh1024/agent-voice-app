@@ -162,9 +162,8 @@ void main() {
     await tester.tap(find.text('1 段对话 · 最近 09:40'));
     await tester.pumpAndSettle();
     expect(find.text('聊天详情'), findsOneWidget);
-    await scrollTo(tester, find.text('记忆处理完成，本轮回忆暂不可用'));
-    expect(find.text('记忆处理完成，本轮回忆暂不可用'), findsOneWidget);
     await scrollTo(tester, find.text('工具记录'));
+    expect(find.text('记忆处理完成，本轮回忆暂不可用'), findsNothing);
     await tester.tap(find.text('工具记录'));
     await tester.pumpAndSettle();
     expect(find.text('工具查询结果'), findsOneWidget);
